@@ -1,5 +1,8 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
+const API_KEY =
+  import.meta.env.VITE_DASHBOARD_MODE === 'client_fi'
+    ? import.meta.env.VITE_READ_ONLY_API_KEY || import.meta.env.VITE_API_KEY || ''
+    : import.meta.env.VITE_API_KEY || '';
 
 export async function apiGet(path) {
   const response = await fetch(`${API_BASE_URL}${path}`, {

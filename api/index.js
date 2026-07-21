@@ -53,19 +53,48 @@ export function createApp() {
 
 function optionalApiKey(req, res, next) {
   const expectedKeys = [process.env.API_KEY, process.env.VITE_API_KEY].filter(Boolean);
+  const readOnlyKeys = [process.env.READ_ONLY_API_KEY, process.env.VITE_READ_ONLY_API_KEY].filter(Boolean);
   const cronSecret = process.env.CRON_SECRET;
-  if (!expectedKeys.length && !cronSecret) return next();
+  if (!expectedKeys.length && !readOnlyKeys.length && !cronSecret) return next();
 
   const actual = req.get('x-api-key');
   const authorization = req.get('authorization');
   const cronAuthorized = cronSecret && authorization === `Bearer ${cronSecret}`;
   const apiAuthorized = expectedKeys.includes(actual);
+  const readOnlyAuthorized = readOnlyKeys.includes(actual);
 
-  if (!apiAuthorized && !cronAuthorized) {
+  if (!apiAuthorized && !cronAuthorized && !readOnlyAuthorized) {
     return res.status(401).json({ error: 'Invalid API key' });
   }
 
+  if (readOnlyAuthorized && !apiAuthorized && !cronAuthorized && !isReadOnlyRequest(req)) {
+    return res.status(403).json({ error: 'Read-only API key cannot perform this action' });
+  }
+
   return next();
+}
+
+function isReadOnlyRequest(req) {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') return false;
+
+  const requestPath = (req.originalUrl || req.path || '').split('?')[0];
+  const mountedPath = req.path || '';
+  const allowedPrefixes = [
+    '/api/health',
+    '/api/summary',
+    '/api/listings',
+    '/api/interested',
+    '/api/conversations',
+    '/api/calendar-calls',
+    '/api/settings',
+  ];
+
+  const mountedPrefixes = allowedPrefixes.map((prefix) => prefix.replace(/^\/api/, '') || '/');
+
+  return (
+    allowedPrefixes.some((prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`)) ||
+    mountedPrefixes.some((prefix) => mountedPath === prefix || mountedPath.startsWith(`${prefix}/`))
+  );
 }
 
 export default createApp();

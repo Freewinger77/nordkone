@@ -36,6 +36,7 @@ router.get('/summary', async (_req, res) => {
     countSessions(supabase, { interestStatus: 'interested' }),
     countSessions(supabase, { interestStatus: 'needs_human' }),
   ]);
+  const derivedStatusCounts = await buildDerivedStatusSummary(supabase);
 
   res.json({
     client_key: CLIENT_KEY,
@@ -55,6 +56,7 @@ router.get('/summary', async (_req, res) => {
     interested: interestedSessions || interestedListings,
     needs_human: needsHumanSessions,
     opt_outs: optedOutListings,
+    derived_status_counts: derivedStatusCounts,
   });
 });
 
@@ -148,6 +150,7 @@ router.get('/conversations', async (req, res) => {
     const listing = listingByNettikoneId.get(session.source_customer_id) || listingFromSession(session);
     const inboundEvents = inboundBySession.get(session.id) || [];
     const messages = buildConversationMessages(session, inboundEvents);
+    const derivedStatus = deriveLeadStatus({ listing, session, events: inboundEvents });
 
     return {
       session_id: session.id,
@@ -155,6 +158,7 @@ router.get('/conversations', async (req, res) => {
       number: session.number,
       status: session.status,
       interest_status: session.interest_status,
+      derived_status: derivedStatus,
       inbound_count: session.inbound_count || 0,
       outbound_count: session.outbound_count || 0,
       last_inbound_at: session.last_inbound_at,
@@ -167,6 +171,99 @@ router.get('/conversations', async (req, res) => {
   });
 
   res.json({ conversations });
+});
+
+router.get('/calendar-calls', async (req, res) => {
+  const supabase = createSupabase();
+  const limit = clamp(Number(req.query.limit || 50), 1, 150);
+
+  const { data: events, error: eventError } = await supabase
+    .from('campaign_inbound_events')
+    .select('*')
+    .eq('client_key', CLIENT_KEY)
+    .in('classification', ['interested', 'needs_human'])
+    .order('received_at', { ascending: false })
+    .limit(limit * 3);
+
+  if (eventError) throw eventError;
+
+  const eventRows = events || [];
+  const sourceIds = [...new Set(eventRows.map((event) => event.source_customer_id).filter(Boolean))];
+  const sessionIds = [...new Set(eventRows.map((event) => event.session_id).filter(Boolean))];
+
+  const [listingResult, sessionResult] = await Promise.all([
+    sourceIds.length
+      ? supabase
+          .from('nordkone_listings')
+          .select('*')
+          .eq('client_key', CLIENT_KEY)
+          .in('nettikone_id', sourceIds)
+      : Promise.resolve({ data: [], error: null }),
+    sessionIds.length
+      ? supabase
+          .from('campaign_outbound_sessions')
+          .select('*')
+          .eq('client_key', CLIENT_KEY)
+          .in('id', sessionIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (listingResult.error) throw listingResult.error;
+  if (sessionResult.error) throw sessionResult.error;
+
+  const listingByNettikoneId = new Map(
+    (listingResult.data || []).map((listing) => [listing.nettikone_id, listingRowToResponse(listing)])
+  );
+  const sessionById = new Map((sessionResult.data || []).map((session) => [session.id, session]));
+  const seenBooked = new Set();
+  const seenPending = new Set();
+  const bookedCalls = [];
+  const pendingCallbacks = [];
+
+  for (const event of eventRows) {
+    const listing = listingByNettikoneId.get(event.source_customer_id);
+    const session = sessionById.get(event.session_id);
+    const calendar = extractCalendarMetadata(event, session);
+    const dedupeKey = event.source_customer_id || event.number || event.id;
+
+    const row = {
+      id: `call-${event.id}`,
+      status: calendar?.status || 'pending_call',
+      scheduled_start: calendar?.start || null,
+      scheduled_end: calendar?.end || null,
+      calendar_event_id: calendar?.event_id || null,
+      calendar_link: calendar?.link || null,
+      assigned_to: calendar?.assigned_to || 'Roope',
+      received_at: event.received_at || event.created_at,
+      source_customer_id: event.source_customer_id,
+      number: event.number,
+      callback_number: extractCallbackNumber(event) || event.number,
+      latest_message: event.message,
+      reply_message: event.raw_event?.reply_message || event.raw_event?.agent_reply_message || null,
+      classification: event.classification,
+      needs_human: event.needs_human,
+      listing,
+    };
+
+    if (calendar && !seenBooked.has(`${dedupeKey}:${calendar.event_id || calendar.start || event.id}`)) {
+      seenBooked.add(`${dedupeKey}:${calendar.event_id || calendar.start || event.id}`);
+      bookedCalls.push(row);
+      continue;
+    }
+
+    if (deriveLeadStatus({ listing, session, events: [event] }) === 'ready_for_call' && !seenPending.has(dedupeKey)) {
+      seenPending.add(dedupeKey);
+      pendingCallbacks.push(row);
+    }
+
+    if (bookedCalls.length >= limit && pendingCallbacks.length >= limit) break;
+  }
+
+  res.json({
+    booked_calls: bookedCalls.slice(0, limit),
+    pending_callbacks: pendingCallbacks.slice(0, limit),
+    calls: [...bookedCalls, ...pendingCallbacks].slice(0, limit),
+  });
 });
 
 router.get('/outbound/candidates', async (req, res) => {
@@ -459,6 +556,61 @@ function buildConversationMessages(session = {}, inboundEvents = []) {
   return messages.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
 }
 
+function extractCalendarMetadata(event = {}, session = {}) {
+  const rawEvent = event.raw_event || {};
+  const rawSession = session.raw_data || {};
+  const candidate =
+    rawEvent.calendar ||
+    rawEvent.calendar_booking ||
+    rawEvent.calendarBooking ||
+    rawSession.calendar ||
+    rawSession.calendar_booking ||
+    rawSession.calendarBooking ||
+    null;
+
+  if (!candidate) return null;
+
+  return {
+    event_id: candidate.event_id || candidate.eventId || candidate.id || null,
+    link: candidate.link || candidate.htmlLink || candidate.calendar_link || null,
+    start: candidate.start || candidate.scheduled_start || candidate.call_start || null,
+    end: candidate.end || candidate.scheduled_end || candidate.call_end || null,
+    status: candidate.status || 'booked',
+    assigned_to: candidate.assigned_to || candidate.attendee || 'Roope',
+  };
+}
+
+function isCallLikeEvent(event = {}) {
+  const text = [
+    event.message,
+    event.raw_event?.reply_message,
+    event.raw_event?.agent_reply_message,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return [
+    'puhelu',
+    'soitto',
+    'soittaa',
+    'soitamme',
+    'soitella',
+    'heti',
+    'nyt',
+    'tavoitettavissa',
+    'sopii',
+    'klo',
+    'min kuluttua',
+  ].some((term) => text.includes(term));
+}
+
+function extractCallbackNumber(event = {}) {
+  const text = String(event.message || '');
+  const match = text.match(/(?:\+358|0)\s?\d[\d\s-]{6,}/);
+  return match ? normalizePhone(match[0]) : null;
+}
+
 function groupBy(rows = [], key) {
   const groups = new Map();
   for (const row of rows) {
@@ -496,6 +648,153 @@ async function loadExistingSession(supabase, nettikoneId) {
 
   if (error) throw error;
   return data;
+}
+
+async function buildDerivedStatusSummary(supabase) {
+  const [sessionResult, listingResult, inboundResult] = await Promise.all([
+    supabase
+      .from('campaign_outbound_sessions')
+      .select('*')
+      .eq('client_key', CLIENT_KEY)
+      .eq('source_system', SOURCE_SYSTEM),
+    supabase.from('nordkone_listings').select('*').eq('client_key', CLIENT_KEY),
+    supabase
+      .from('campaign_inbound_events')
+      .select('*')
+      .eq('client_key', CLIENT_KEY)
+      .order('received_at', { ascending: true }),
+  ]);
+
+  if (sessionResult.error) throw sessionResult.error;
+  if (listingResult.error) throw listingResult.error;
+  if (inboundResult.error) throw inboundResult.error;
+
+  const sessions = sessionResult.data || [];
+  const listings = listingResult.data || [];
+  const inboundEvents = inboundResult.data || [];
+  const listingByNettikoneId = new Map(listings.map((listing) => [listing.nettikone_id, listing]));
+  const eventsByLead = new Map();
+
+  for (const event of inboundEvents) {
+    const key = event.source_customer_id || event.number;
+    if (!key) continue;
+    if (!eventsByLead.has(key)) eventsByLead.set(key, []);
+    eventsByLead.get(key).push(event);
+  }
+
+  const counts = {
+    ready_to_contact: 0,
+    contacted: sessions.length,
+    replies: sessions.filter((session) => session.last_inbound_at).length,
+    machine_available: 0,
+    interested: 0,
+    ready_for_call: 0,
+    booked: 0,
+    needs_review: 0,
+    opt_out: listings.filter((listing) => listing.status === 'opted_out').length,
+  };
+  const derivedBuckets = new Set(['machine_available', 'interested', 'ready_for_call', 'booked', 'needs_review']);
+
+  const seen = new Set();
+
+  for (const session of sessions) {
+    const key = session.source_customer_id || session.number;
+    if (!key) continue;
+    seen.add(key);
+    const listing = listingByNettikoneId.get(session.source_customer_id);
+    const events = eventsByLead.get(key) || [];
+    const derivedStatus = deriveLeadStatus({ listing, session, events });
+    if (derivedBuckets.has(derivedStatus)) counts[derivedStatus] += 1;
+  }
+
+  for (const listing of listings) {
+    if (seen.has(listing.nettikone_id)) continue;
+    const events = eventsByLead.get(listing.nettikone_id) || eventsByLead.get(listing.normalized_phone) || [];
+    const derivedStatus = deriveLeadStatus({ listing, session: null, events });
+    if (derivedStatus === 'ready_to_contact' && listing.normalized_phone) counts.ready_to_contact += 1;
+    else if (derivedBuckets.has(derivedStatus)) counts[derivedStatus] += 1;
+  }
+
+  return counts;
+}
+
+function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
+  if (listing?.status === 'opted_out') return 'opt_out';
+  if (listing?.status === 'sold') return 'sold';
+  if (listing?.status === 'not_interested') return 'not_interested';
+  if (!session && listing?.status === 'eligible') return 'ready_to_contact';
+  if (!events.length) return session ? 'contacted' : listing?.status || 'ready_to_contact';
+
+  const latest = events[events.length - 1];
+  const fullText = events.map((event) => `${event.message || ''} ${event.raw_event?.reply_message || ''}`).join(' ');
+  const latestText = `${latest.message || ''} ${latest.raw_event?.reply_message || ''}`;
+
+  if (containsAny(fullText, ['myyty', 'meni jo', 'kaupat tehty', 'ei ole enää'])) return 'sold';
+  if (containsAny(fullText, ['älä lähetä', 'poista', 'lopeta', 'stop'])) return 'opt_out';
+  if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse'])) return 'not_interested';
+  if (extractCalendarMetadata(latest, session)) return 'booked';
+  if (isReadyForCallText(latestText)) return 'ready_for_call';
+  if (isCommercialInterestText(fullText)) return 'interested';
+  if (isMachineAvailableText(fullText)) return 'machine_available';
+  if (events.some((event) => event.classification === 'needs_human')) return 'needs_review';
+  if (events.some((event) => event.classification === 'interested')) return 'interested';
+
+  return 'needs_review';
+}
+
+function containsAny(value = '', terms = []) {
+  const text = String(value || '').toLowerCase();
+  return terms.some((term) => text.includes(term));
+}
+
+function isReadyForCallText(value = '') {
+  return containsAny(value, [
+    'voit soittaa',
+    'voi soittaa',
+    'soittaa heti',
+    'soita',
+    'vaikka nyt',
+    'vaikka heti',
+    'huomenna',
+    'klo',
+    'iltapäiv',
+    '13 jälkeen',
+    'sopii',
+    'käy hyvin',
+    'milloin vain',
+    'tavoitettavissa',
+    'heti',
+    'nyt',
+    'min kuluttua',
+  ]);
+}
+
+function isCommercialInterestText(value = '') {
+  return containsAny(value, [
+    'välitys',
+    'prosent',
+    'miten tämä toimii',
+    'ostohinta',
+    'tarjous',
+    'voitteko auttaa',
+    'haluan myydä',
+    'kiinnostaa',
+    'myyntimalli',
+  ]);
+}
+
+function isMachineAvailableText(value = '') {
+  return containsAny(value, [
+    'on se',
+    'on vielä',
+    'kyllä on',
+    'joo on',
+    'juu on',
+    'myytävänä',
+    'myynnissä',
+    'löytyy vielä',
+    'vielä on',
+  ]);
 }
 
 async function countListings(supabase, { status, hasPhone, phoneSource } = {}) {

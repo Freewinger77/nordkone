@@ -209,7 +209,7 @@ button.danger {
 .cards {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin-bottom: 14px;
 }
 
@@ -626,6 +626,27 @@ button.danger {
   font-weight: 800;
 }
 
+.chat-filter {
+  border-bottom: 1px solid rgba(60, 71, 51, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 18px 16px;
+}
+
+.chat-filter button {
+  background: #efe7d2;
+  box-shadow: none;
+  color: #343b2f;
+  font-size: 0.72rem;
+  padding: 0.62rem 0.78rem;
+}
+
+.chat-filter button.active {
+  background: #20261d;
+  color: #fff7e7;
+}
+
 .table-panel {
   overflow-x: auto;
 }
@@ -872,6 +893,397 @@ dd {
   white-space: pre-wrap;
 }
 
+.loading-strip {
+  background: rgba(32, 38, 29, 0.9);
+  border-radius: 999px;
+  color: #fff7e7;
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 850;
+  margin-bottom: 12px;
+  padding: 0.62rem 0.9rem;
+}
+
+.loading-state {
+  display: grid;
+  gap: 14px;
+}
+
+.loading-panel {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 22px;
+}
+
+.loading-panel h2 {
+  color: #242b20;
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+  margin: 6px 0 0;
+}
+
+.loader-dots {
+  display: flex;
+  gap: 7px;
+}
+
+.loader-dots span {
+  animation: pulse-dot 900ms ease-in-out infinite;
+  background: #20261d;
+  border-radius: 999px;
+  height: 9px;
+  width: 9px;
+}
+
+.loader-dots span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.loader-dots span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.skeleton-card,
+.skeleton-panel,
+.skeleton-detail {
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton-card::before,
+.skeleton-panel::before,
+.skeleton-detail::before {
+  animation: skeleton-sweep 1.3s linear infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.64), transparent);
+  content: "";
+  inset: 0;
+  position: absolute;
+  transform: translateX(-100%);
+}
+
+.skeleton-line {
+  background: rgba(32, 38, 29, 0.12);
+  border-radius: 999px;
+  display: block;
+  height: 11px;
+  margin-top: 12px;
+  width: 78%;
+}
+
+.skeleton-line.short {
+  margin-top: 0;
+  width: 42%;
+}
+
+.skeleton-line.number {
+  height: 30px;
+  width: 34%;
+}
+
+.skeleton-panel,
+.skeleton-detail {
+  min-height: 420px;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.calendar-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.calendar-intro {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 22px;
+}
+
+.calendar-intro h2 {
+  color: #242b20;
+  font-size: clamp(1.15rem, 2vw, 1.7rem);
+  letter-spacing: -0.055em;
+  margin: 6px 0 6px;
+}
+
+.calendar-intro p {
+  color: #626a5a;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.calendar-intro > span {
+  background: #20261d;
+  border-radius: 999px;
+  color: #fff7e7;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 0.58rem 0.8rem;
+  white-space: nowrap;
+}
+
+.call-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.call-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.call-card-top,
+.call-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.call-card time {
+  color: #6c715f;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.call-card h3 {
+  color: #20261d;
+  font-size: clamp(1rem, 1.5vw, 1.22rem);
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.call-card dl {
+  grid-template-columns: 110px 1fr;
+}
+
+.call-card dt {
+  color: #777b6c;
+}
+
+.call-card dd {
+  color: #242b20;
+}
+
+.call-message {
+  background: #f4ecd8;
+  border: 1px solid rgba(56, 64, 47, 0.1);
+  border-radius: 16px;
+  padding: 13px;
+}
+
+.call-message span {
+  color: #70653f;
+  display: block;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.call-message p {
+  color: #30372b;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.call-actions a,
+.call-actions button {
+  align-items: center;
+  border-radius: 12px;
+  display: inline-flex;
+  font-size: 0.74rem;
+  font-weight: 900;
+  min-height: 38px;
+  padding: 0.58rem 0.72rem;
+  text-decoration: none;
+}
+
+.call-actions a {
+  background: #efe7d2;
+  color: #2d3328;
+}
+
+.call-actions button {
+  box-shadow: none;
+}
+
+.calendar-layout {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+}
+
+.calendar-board {
+  display: grid;
+  padding: 12px;
+}
+
+.calendar-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 72px 1fr;
+  min-height: 76px;
+}
+
+.calendar-row > time {
+  color: #747866;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding-top: 15px;
+}
+
+.calendar-slot {
+  border-left: 1px solid rgba(60, 71, 51, 0.12);
+  border-top: 1px solid rgba(60, 71, 51, 0.1);
+  display: grid;
+  gap: 8px;
+  min-height: 76px;
+  padding: 10px 0 10px 14px;
+}
+
+.calendar-row:first-child .calendar-slot {
+  border-top: 0;
+}
+
+.calendar-event {
+  align-items: center;
+  background: #20261d;
+  border-radius: 16px;
+  color: #fff7e7;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: auto 1fr auto auto;
+  padding: 12px;
+}
+
+.calendar-event span {
+  color: #f3e4bb;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.calendar-event strong {
+  font-size: 0.88rem;
+  letter-spacing: -0.02em;
+}
+
+.calendar-event small {
+  color: rgba(255, 247, 231, 0.76);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.calendar-event button {
+  background: #f3e4bb;
+  box-shadow: none;
+  color: #20261d;
+  font-size: 0.72rem;
+  padding: 0.56rem 0.7rem;
+}
+
+.pending-calls {
+  overflow: hidden;
+}
+
+.compact-heading {
+  align-items: start;
+  gap: 14px;
+}
+
+.compact-heading h2 {
+  font-size: 2rem;
+  line-height: 0.9;
+}
+
+.compact-heading span {
+  max-width: 210px;
+  text-align: right;
+}
+
+.pending-list {
+  display: grid;
+  gap: 10px;
+  max-height: 720px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.pending-call {
+  background: #fff9ec;
+  border: 1px solid rgba(56, 64, 47, 0.11);
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.pending-call strong,
+.pending-call small {
+  display: block;
+}
+
+.pending-call strong {
+  color: #20261d;
+  font-size: 0.86rem;
+  letter-spacing: -0.02em;
+}
+
+.pending-call small {
+  color: #747866;
+  font-size: 0.72rem;
+  margin-top: 4px;
+}
+
+.pending-call p {
+  color: #3b4235;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.pending-call button {
+  justify-self: start;
+  box-shadow: none;
+  font-size: 0.72rem;
+  padding: 0.58rem 0.75rem;
+}
+
+.client-mode .hero {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(240, 234, 221, 0.82)),
+    #f7f1e5;
+}
+
+.client-mode .tabs button {
+  min-width: 120px;
+}
+
 .empty {
   color: #777;
   padding: 24px;
@@ -890,6 +1302,14 @@ dd {
 @media (max-width: 1220px) {
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .call-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-layout {
+    grid-template-columns: 1fr;
   }
 
   .grid,
@@ -935,6 +1355,36 @@ dd {
 
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-intro,
+  .call-card-top,
+  .call-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .call-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-row {
+    grid-template-columns: 54px 1fr;
+  }
+
+  .calendar-event {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .compact-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-heading span {
+    max-width: none;
+    text-align: left;
   }
 
   .card {

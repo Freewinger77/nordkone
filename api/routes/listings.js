@@ -491,6 +491,77 @@ router.post('/message-status', async (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/calendar-booking', async (req, res) => {
+  const supabase = createSupabase();
+  const {
+    session_id,
+    source_customer_id,
+    nettikone_id,
+    number,
+    event_id,
+    status = event_id ? 'booked' : 'failed',
+    start,
+    end,
+    link,
+    assigned_to = 'Roope',
+    calendar_id = 'hi@wasup.co',
+    attendee = 'roope261@gmail.com',
+    attendee_response,
+    error,
+    raw_event = {},
+  } = req.body || {};
+
+  const normalized = number ? normalizePhone(number) : null;
+  const sourceCustomerId = source_customer_id || nettikone_id || null;
+
+  let query = supabase
+    .from('campaign_outbound_sessions')
+    .select('id,raw_data')
+    .eq('client_key', CLIENT_KEY)
+    .eq('source_system', SOURCE_SYSTEM);
+
+  if (session_id) query = query.eq('id', session_id);
+  else if (sourceCustomerId) query = query.eq('source_customer_id', sourceCustomerId);
+  else if (normalized) query = query.eq('number', normalized);
+  else return res.status(400).json({ error: 'session_id, source_customer_id, nettikone_id, or number is required' });
+
+  const { data: session, error: sessionError } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+  if (sessionError) throw sessionError;
+  if (!session) return res.status(404).json({ error: 'session not found' });
+
+  const rawData = session.raw_data || {};
+  const nextRawData = {
+    ...rawData,
+    calendar_booking: {
+      event_id: event_id || null,
+      id: event_id || null,
+      status,
+      start: start || null,
+      end: end || null,
+      link: link || null,
+      htmlLink: link || null,
+      assigned_to,
+      calendar_id,
+      attendee,
+      attendee_response: attendee_response || null,
+      error: error || null,
+      source: raw_event.source || 'wf2',
+      updated_at: new Date().toISOString(),
+      raw_event,
+    },
+  };
+
+  const { data: updated, error: updateError } = await supabase
+    .from('campaign_outbound_sessions')
+    .update({ raw_data: nextRawData, updated_at: new Date().toISOString() })
+    .eq('id', session.id)
+    .select('id,source_customer_id,raw_data')
+    .single();
+
+  if (updateError) throw updateError;
+  res.json({ ok: true, session: updated });
+});
+
 function buildOutboundMessage(machineTitle) {
   return `Moikka! Sulla oli Nettikoneessa ${machineTitle || 'kone'} myynnissä. Onko se edelleen kaupan?`;
 }

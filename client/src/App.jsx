@@ -26,6 +26,7 @@ import {
   statusDot,
   weekdayReplySeries,
 } from './lib/desk.js';
+import { Login } from './Login.jsx';
 import './styles.css';
 
 const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
@@ -64,6 +65,7 @@ function App() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [scrapeNote, setScrapeNote] = useState('');
+  const [authed, setAuthed] = useState(null);
 
   const isDesktop = vw >= 1120;
 
@@ -105,8 +107,23 @@ function App() {
   }
 
   useEffect(() => {
-    load({ boot: true });
+    let cancelled = false;
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) setAuthed(Boolean(data.ok));
+      })
+      .catch(() => {
+        if (!cancelled) setAuthed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (authed) load({ boot: true });
+  }, [authed]);
 
   useEffect(() => {
     const onResize = () => setVw(window.innerWidth);
@@ -434,7 +451,14 @@ function App() {
     toggleOutbound: () => updateSettings({ outbound_enabled: !outboundOn }),
     toggleQueue,
     waitLeads,
+    signOut: async () => {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+      setAuthed(false);
+    },
   };
+
+  if (authed === null) return <div className="login-app" aria-busy="true" />;
+  if (!authed) return <Login onAuthed={() => setAuthed(true)} />;
 
   return (
     <main className="desk">
@@ -486,6 +510,7 @@ function MobileDesk({ ctx }) {
           <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} />
           <span className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</span>
         </button>
+        <button className="sign-out" onClick={ctx.signOut} type="button">Sign out</button>
       </div>
       {ctx.error ? <div className="error">{ctx.error}</div> : null}
       <div className="m-body">
@@ -547,6 +572,7 @@ function Sidebar({ ctx }) {
           <button className="ob-link" onClick={ctx.openModal} type="button">Open controls →</button>
         ) : null}
       </div>
+      <button className="sign-out" onClick={ctx.signOut} type="button">Sign out</button>
     </aside>
   );
 }

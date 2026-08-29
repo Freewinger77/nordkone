@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
+import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
 
 const router = Router();
 
@@ -178,7 +179,7 @@ router.get('/interested', async (_req, res) => {
 
 router.get('/conversations', async (req, res) => {
   const supabase = createSupabase();
-  const limit = clamp(Number(req.query.limit || 30), 1, 100);
+  const limit = clamp(Number(req.query.limit || 200), 1, 500);
 
   const { data: sessions, error: sessionError } = await supabase
     .from('campaign_outbound_sessions')
@@ -225,19 +226,23 @@ router.get('/conversations', async (req, res) => {
     const inboundEvents = inboundBySession.get(session.id) || [];
     const messages = buildConversationMessages(session, inboundEvents);
     const derivedStatus = deriveLeadStatus({ listing, session, events: inboundEvents });
+    const calendarBooking = extractCalendarMetadata(inboundEvents[inboundEvents.length - 1] || {}, session);
 
     return {
       session_id: session.id,
+      source_customer_id: session.source_customer_id,
       prospect_id: session.prospect_id,
       number: session.number,
       status: session.status,
       interest_status: session.interest_status,
+      desk_status: session.raw_data?.desk_status || listing?.desk_status || null,
       derived_status: derivedStatus,
       inbound_count: session.inbound_count || 0,
       outbound_count: session.outbound_count || 0,
       last_inbound_at: session.last_inbound_at,
       last_outbound_at: session.last_outbound_at,
       updated_at: session.updated_at,
+      calendar_booking: calendarBooking,
       listing,
       messages,
       latest_message: messages[messages.length - 1] || null,
@@ -319,9 +324,19 @@ router.get('/calendar-calls', async (req, res) => {
       listing,
     };
 
-    if (calendar && !seenBooked.has(`${dedupeKey}:${calendar.event_id || calendar.start || event.id}`)) {
-      seenBooked.add(`${dedupeKey}:${calendar.event_id || calendar.start || event.id}`);
-      bookedCalls.push(row);
+    const sessionBooking = extractCalendarMetadata(event, session);
+    const activeBooking = isActiveBooking(sessionBooking || calendar);
+    if (activeBooking && !seenBooked.has(`${dedupeKey}:${calendar?.event_id || sessionBooking?.event_id || calendar?.start || event.id}`)) {
+      seenBooked.add(`${dedupeKey}:${calendar?.event_id || sessionBooking?.event_id || calendar?.start || event.id}`);
+      bookedCalls.push({
+        ...row,
+        status: sessionBooking?.status || calendar?.status || row.status,
+        scheduled_start: sessionBooking?.start || calendar?.start || row.scheduled_start,
+        scheduled_end: sessionBooking?.end || calendar?.end || row.scheduled_end,
+        calendar_event_id: sessionBooking?.event_id || calendar?.event_id || row.calendar_event_id,
+        calendar_link: sessionBooking?.link || calendar?.link || row.calendar_link,
+        attendee_response: sessionBooking?.attendee_response || calendar?.attendee_response || null,
+      });
       continue;
     }
 
@@ -722,6 +737,7 @@ function extractCalendarMetadata(event = {}, session = {}) {
     end: candidate.end || candidate.scheduled_end || candidate.call_end || null,
     status: candidate.status || 'booked',
     assigned_to: candidate.assigned_to || candidate.attendee || 'Roope',
+    attendee_response: candidate.attendee_response || candidate.attendeeResponse || candidate.responseStatus || null,
   };
 }
 
@@ -891,20 +907,40 @@ async function buildDerivedStatusSummary(supabase) {
 }
 
 function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
-  if (listing?.status === 'opted_out') return 'opt_out';
-  if (listing?.status === 'sold') return 'sold';
-  if (listing?.status === 'not_interested') return 'not_interested';
-  if (!session && listing?.status === 'eligible') return 'ready_to_contact';
-  if (!events.length) return session ? 'contacted' : listing?.status || 'ready_to_contact';
+  const listingStatus = listing?.status || '';
+  const sessionStatus = session?.status || '';
+  const interest = session?.interest_status || listing?.interest_status || '';
+  const booking = extractCalendarMetadata(events[events.length - 1] || {}, session) || bookingFromRecord(session);
+
+  if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
+  if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';
+  if (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested') {
+    return 'not_interested';
+  }
+  if (isActiveBooking(booking)) return 'booked';
+  if (listingStatus === 'interested' || sessionStatus === 'interested' || interest === 'interested') {
+    const latestText = events.length
+      ? `${events[events.length - 1].message || ''} ${events[events.length - 1].raw_event?.reply_message || ''}`
+      : '';
+    if (isReadyForCallText(latestText)) return 'ready_for_call';
+    return 'interested';
+  }
+  if (!session && listingStatus === 'eligible') return 'ready_to_contact';
+  if (!events.length) return session ? (session.last_inbound_at ? 'needs_review' : 'contacted') : listingStatus || 'ready_to_contact';
 
   const latest = events[events.length - 1];
   const fullText = events.map((event) => `${event.message || ''} ${event.raw_event?.reply_message || ''}`).join(' ');
   const latestText = `${latest.message || ''} ${latest.raw_event?.reply_message || ''}`;
 
-  if (containsAny(fullText, ['myyty', 'meni jo', 'kaupat tehty', 'ei ole enää'])) return 'sold';
-  if (containsAny(fullText, ['älä lähetä', 'poista', 'lopeta', 'stop'])) return 'opt_out';
-  if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse'])) return 'not_interested';
-  if (extractCalendarMetadata(latest, session)) return 'booked';
+  if (containsAny(fullText, ['myyty', 'meni jo', 'kaupat tehty', 'ei ole enää']) || events.some((event) => event.classification === 'sold')) {
+    return 'sold';
+  }
+  if (containsAny(fullText, ['älä lähetä', 'poista', 'lopeta', 'stop']) || events.some((event) => event.classification === 'opted_out')) {
+    return 'opt_out';
+  }
+  if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse']) || events.some((event) => event.classification === 'not_interested')) {
+    return 'not_interested';
+  }
   if (isReadyForCallText(latestText)) return 'ready_for_call';
   if (isCommercialInterestText(fullText)) return 'interested';
   if (isMachineAvailableText(fullText)) return 'machine_available';

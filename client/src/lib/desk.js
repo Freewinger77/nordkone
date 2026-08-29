@@ -1,3 +1,5 @@
+import { reconcileLead } from '../../../shared/reconcile.js';
+
 export const DESK_STATUSES = [
   { label: 'Interested', dot: 'rgb(113,221,140)' },
   { label: 'No Answer', dot: 'rgb(255,204,0)' },
@@ -48,52 +50,19 @@ export const DEFAULT_COPIES = [
   },
 ];
 
-export const FLOW_FILTERS = {
-  replied: { label: 'Replied', test: (lead) => lead.stage !== 'No Answer' },
-  noreply: { label: 'No reply', test: (lead) => lead.stage === 'No Answer' },
-  interested: {
-    label: 'Interested',
-    test: (lead) => ['Interested', 'Callback', 'Booked', 'Deal Won', 'Deal Lost'].includes(lead.stage),
-  },
-  notint: {
-    label: 'Not interested',
-    test: (lead) => lead.stage === 'Not Interested' || lead.stage === 'Opted Out',
-  },
-  review: { label: 'Review', test: (lead) => lead.stage === 'Review' },
-  won: { label: 'Deal won', test: (lead) => lead.stage === 'Deal Won' },
-  lost: { label: 'Deal lost', test: (lead) => lead.stage === 'Deal Lost' },
-  booked: { label: 'Booked', test: (lead) => lead.stage === 'Booked' },
-  await: {
-    label: 'Awaiting booking',
-    test: (lead) => lead.stage === 'Interested' || lead.stage === 'Callback',
-  },
-};
+export {
+  FLOW_FILTERS,
+  countFlow,
+  matchesFlowFilter,
+  reconcileLead,
+} from '../../../shared/reconcile.js';
 
 export function statusDot(label) {
   return STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
 }
 
-export function listingToDeskStatus(listing = {}, conversation = {}) {
-  const stored = listing.desk_status || conversation.desk_status || listing.raw_data?.desk_status;
-  if (stored && STATUS_DOT[stored]) return stored;
-
-  const derived = conversation.derived_status || conversation.interest_status || listing.status;
-  const map = {
-    eligible: 'Eligible',
-    contacted: 'No Answer',
-    replied: 'Review',
-    interested: 'Interested',
-    sold: 'Deal Lost',
-    not_interested: 'Not Interested',
-    opted_out: 'Opted Out',
-    needs_human: 'Review',
-    needs_review: 'Review',
-    machine_available: 'Interested',
-    ready_for_call: 'Callback',
-    booked: 'Booked',
-    opt_out: 'Opted Out',
-  };
-  return map[derived] || 'Review';
+export function listingToDeskStatus(listing = {}, conversation = {}, calendarCalls = []) {
+  return reconcileLead({ listing, conversation, calendarCalls }).stage;
 }
 
 export function listingStatusLabel(status) {

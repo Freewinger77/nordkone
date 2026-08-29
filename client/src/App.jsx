@@ -12,15 +12,16 @@ import {
   buildFlow,
   buildOutboundMessage,
   buildWeek,
+  countFlow,
   cut,
   formatEuro,
   formatHelsinkiTime,
   isSuspiciousPrice,
   listingStatusLabel,
-  listingToDeskStatus,
   loadJson,
   parseEuroAmount,
   poly,
+  reconcileLead,
   relativeAgo,
   saveJson,
   smooth,
@@ -74,7 +75,7 @@ function App() {
       const [summaryData, listingData, conversationData, callsData, settingsData, candidateData] = await Promise.all([
         apiGet('/api/summary'),
         apiGet('/api/listings?status=all&limit=200'),
-        apiGet('/api/conversations?limit=100'),
+        apiGet('/api/conversations?limit=300'),
         apiGet('/api/calendar-calls?limit=150'),
         apiGet('/api/settings'),
         apiGet('/api/outbound/candidates?limit=1').catch(() => ({ control: null })),
@@ -152,7 +153,7 @@ function App() {
     if (queue !== null || !leads.length) return;
     setQueue(
       leads
-        .filter((lead) => ['Interested', 'Callback', 'Review'].includes(lead.stage))
+        .filter((lead) => lead.interestedSignal || lead.awaiting || lead.reviewSignal || lead.booked)
         .map((lead) => lead.id)
     );
   }, [leads, queue]);
@@ -283,18 +284,21 @@ function App() {
   const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
   const week = useMemo(() => buildWeek(weekOffset, calendarCalls), [calendarCalls, weekOffset]);
 
-  const bookedAsk = calendarCalls.reduce((sum, call) => sum + parseEuroAmount(call.listing?.price_eur || call.listing?.price_text), 0);
+  const pipelineLeads = leads.filter((lead) => lead.awaiting || lead.booked);
+  const pipelineAsk = pipelineLeads.reduce((sum, lead) => sum + parseEuroAmount(lead.priceEur || lead.price), 0);
   const replyTotal = replies.office.reduce((a, b) => a + b, 0) + replies.after.reduce((a, b) => a + b, 0);
   const afterShare = replyTotal ? Math.round((replies.after.reduce((a, b) => a + b, 0) / replyTotal) * 100) : 0;
   const kpi = {
-    booked: String(calendarCalls.length || flowCounts.booked || 0),
-    bookedDelta: calendarCalls.length ? `+${Math.min(calendarCalls.length, 2)}` : '',
+    booked: String(flowCounts.booked || 0),
+    bookedDelta: flowCounts.booked ? `${flowCounts.booked} live` : '',
     opps: String(flowCounts.interested || 0),
-    lost: String(flowCounts.notint || 0),
+    lost: String(flowCounts.lost || 0),
     oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
-    lostPct: flowCounts.replied ? `${Math.round((flowCounts.notint / flowCounts.replied) * 100)}% of replies` : 'of replies',
-    commission: formatEuro(bookedAsk * 0.05) || '0 €',
-    commissionSub: bookedAsk ? `5% of ${formatEuro(bookedAsk)} combined asking price` : 'No booked asking prices yet',
+    lostPct: flowCounts.replied ? `${Math.round((flowCounts.lost / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    commission: formatEuro(pipelineAsk) || '0 €',
+    commissionSub: pipelineAsk
+      ? `5% est. ${formatEuro(pipelineAsk * 0.05)} · ${pipelineLeads.length} open leads`
+      : 'No open pipeline asking prices yet',
   };
 
   const queueIds = queue || [];
@@ -318,8 +322,8 @@ function App() {
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
   const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
-  const bookedLeads = leads.filter((lead) => lead.stage === 'Booked' || calendarCalls.some((call) => call.source_customer_id === lead.listingId));
-  const waitLeads = leads.filter((lead) => lead.stage === 'Interested' || lead.stage === 'Callback');
+  const bookedLeads = leads.filter((lead) => lead.booked);
+  const waitLeads = leads.filter((lead) => lead.awaiting);
 
   const ctx = {
     advOpen,
@@ -377,8 +381,12 @@ function App() {
       setMenuFor(null);
     },
     pickStage: (key) => {
-      setStage(key === 'messaged' || key === stage ? null : key);
+      setStage(key === stage ? null : key);
       setPage(1);
+      setView('overview');
+      requestAnimationFrame(() => {
+        document.getElementById('lead-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     },
     runScrape,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
@@ -506,10 +514,11 @@ function Sidebar({ ctx }) {
 }
 
 function Overview({ ctx }) {
+  if (ctx.loading) return <OverviewSkeleton />;
   return (
-    <div className="scroll">
+    <div className="scroll page-in">
       <div className="kpis">
-        <article className="card card-wide">
+        <button className={`card card-wide card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
           <div className="card-title">Calls booked</div>
           <svg viewBox="0 0 260 90" width="100%" height="72" preserveAspectRatio="none" style={{ display: 'block', margin: '12px 0 8px' }}>
             <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 90, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -517,31 +526,31 @@ function Overview({ ctx }) {
           <div className="kpi-row">
             <span className="kpi-num">{ctx.kpi.booked}</span>
             {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
-            <span className="muted">from previous period</span>
+            <span className="muted">active calendar bookings</span>
           </div>
-        </article>
-        <article className="card card-mid">
+        </button>
+        <button className={`card card-mid card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
           <div className="row">
             <span className="dot live" />
-            <span className="card-title">Won</span>
+            <span className="card-title">Opportunities</span>
           </div>
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.opps}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.oppPct}</div>
-        </article>
-        <article className="card card-mid">
+        </button>
+        <button className={`card card-mid card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
           <div className="row">
             <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
-            <span className="card-title">Lost</span>
+            <span className="card-title">Deal lost</span>
           </div>
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.lost}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.lostPct}</div>
-        </article>
-        <article className="card card-wide">
+        </button>
+        <button className={`card card-wide card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
           <div className="card-title">Pipeline</div>
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.commission}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.commissionSub}</div>
-          <div className="muted">From the {ctx.kpi.booked} booked calls' adverts</div>
-        </article>
+          <div className="muted">Open interested, callback and booked asking prices</div>
+        </button>
       </div>
 
       <div className="charts">
@@ -567,7 +576,7 @@ function Overview({ ctx }) {
               </div>
             ))}
           </div>
-          <div className="muted" style={{ marginTop: 12 }}>Click any stage to open the work queue filtered to it.</div>
+          <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
         </article>
 
         <article className="card reply-card">
@@ -588,14 +597,16 @@ function Overview({ ctx }) {
         </article>
       </div>
 
-      <LeadTable ctx={ctx} rows={ctx.pageRows} showPager />
+      <div id="lead-table">
+        <LeadTable ctx={ctx} rows={ctx.pageRows} showPager />
+      </div>
     </div>
   );
 }
 
 function WorkQueue({ ctx }) {
   return (
-    <div className="scroll">
+    <div className="scroll page-in">
       <div className="page-title">
         <h1>Work queue</h1>
         <span className="muted">{ctx.queueLeads.length} · open the chat to see the advert</span>
@@ -607,7 +618,7 @@ function WorkQueue({ ctx }) {
 
 function CalendarPage({ ctx }) {
   return (
-    <div className="scroll" style={{ paddingTop: 24 }}>
+    <div className="scroll page-in" style={{ paddingTop: 24 }}>
       <div className="cal-head">
         <h1>{ctx.week.label}</h1>
         <span className="muted" style={{ flex: 1 }}>{ctx.week.count}</span>
@@ -683,6 +694,7 @@ function ListingsPage({ ctx }) {
             </div>
           </div>
         ))}
+        {ctx.loading && !ctx.listings.length ? <div style={{ padding: '0 33px' }}><TableSkeleton /></div> : null}
         {!ctx.listings.length && !ctx.loading ? <div className="muted" style={{ padding: '20px 33px' }}>No listings found.</div> : null}
       </div>
       <aside className="detail">
@@ -747,7 +759,7 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             </button>
           ) : null}
           <span className="grow" />
-          <span className="muted">{rows.length} leads</span>
+          <span className="muted">{ctx.pool.length} leads</span>
           <button className="btn" type="button">
             <Glyph name="ArrowsDownUpWeightRegular" size={17} />
             Last activity
@@ -805,7 +817,12 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             ) : null}
           </div>
         ))}
-        {!rows.length && !ctx.loading ? <div className="muted" style={{ padding: '16px 0' }}>No leads in this view.</div> : null}
+        {ctx.loading ? <TableSkeleton compact={compact} /> : null}
+        {!rows.length && !ctx.loading ? (
+          <div className="muted" style={{ padding: '16px 0' }}>
+            {ctx.filter ? `No ${ctx.filter.label.toLowerCase()} leads match the campaign signals.` : 'No leads in this view.'}
+          </div>
+        ) : null}
       </div>
       {showPager ? (
         <div className="pager">
@@ -1103,13 +1120,14 @@ function OutboundModal({ ctx, onClose }) {
 }
 
 function MobileOverview({ ctx }) {
+  if (ctx.loading) return <OverviewSkeleton mobile />;
   return (
-    <div>
+    <div className="page-in">
       <div className="m-kpis">
-        <div className="m-card"><div className="muted">Calls booked</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.booked}</div></div>
-        <div className="m-card"><div className="muted">Opportunities</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.opps}</div></div>
-        <div className="m-card"><div className="muted">Lost</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.lost}</div></div>
-        <div className="m-card"><div className="muted">Commission</div><div className="kpi-num" style={{ fontSize: 22, lineHeight: '34px' }}>{ctx.kpi.commission}</div></div>
+        <button className={`m-card card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button"><div className="muted">Calls booked</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.booked}</div></button>
+        <button className={`m-card card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button"><div className="muted">Opportunities</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.opps}</div></button>
+        <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button"><div className="muted">Deal lost</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.lost}</div></button>
+        <button className={`m-card card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button"><div className="muted">Pipeline</div><div className="kpi-num" style={{ fontSize: 22, lineHeight: '34px' }}>{ctx.kpi.commission}</div></button>
       </div>
       <div style={{ marginTop: 20 }}>
         <div className="card-title">Campaign flow</div>
@@ -1126,7 +1144,7 @@ function MobileOverview({ ctx }) {
         <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>
         {ctx.filter ? <button className="btn" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div id="lead-table" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.pageRows.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="overview" />)}
       </div>
     </div>
@@ -1244,8 +1262,7 @@ function MobileLeadCard({ ctx, row, source }) {
 
 function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
   const id = listing.nettikone_id || conversation.source_customer_id || conversation.session_id || conversation.number;
-  const booked = calendarCalls.some((call) => call.source_customer_id === listing.nettikone_id || call.number === conversation.number);
-  const stage = booked && !listing.desk_status ? 'Booked' : listingToDeskStatus(listing, conversation);
+  const reconciled = reconcileLead({ listing, conversation, calendarCalls });
   const last = (conversation.messages || []).at(-1);
   const hours = listing.operating_hours ? `${String(listing.operating_hours).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} h` : '—';
   return {
@@ -1263,8 +1280,18 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     notes: listing.description || 'No description stored.',
     outbound: buildOutboundMessage(listing.machine_title),
     url: listing.listing_url,
-    stage,
-    ago: relativeAgo(last?.at || conversation.updated_at || listing.updated_at),
+    stage: reconciled.stage,
+    priceEur: listing.price_eur,
+    replied: reconciled.replied,
+    noReply: reconciled.noReply,
+    interestedSignal: reconciled.interestedSignal,
+    notInterestedSignal: reconciled.notInterestedSignal,
+    reviewSignal: reconciled.reviewSignal,
+    won: reconciled.won,
+    lost: reconciled.lost,
+    booked: reconciled.booked,
+    awaiting: reconciled.awaiting,
+    ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',
     fields: [
       { k: 'Model year', v: listing.model_year || '-' },
@@ -1298,32 +1325,6 @@ function scrapedCount(summary) {
   );
 }
 
-function countFlow(leads, summary) {
-  const counts = {
-    eligible: summary?.eligible || 0,
-    messaged: leads.length,
-    replied: 0,
-    interested: 0,
-    notint: 0,
-    review: 0,
-    won: 0,
-    lost: 0,
-    booked: 0,
-    await: 0,
-  };
-  for (const lead of leads) {
-    if (lead.stage !== 'No Answer') counts.replied += 1;
-    if (['Interested', 'Callback', 'Booked', 'Deal Won', 'Deal Lost'].includes(lead.stage)) counts.interested += 1;
-    if (lead.stage === 'Not Interested' || lead.stage === 'Opted Out') counts.notint += 1;
-    if (lead.stage === 'Review') counts.review += 1;
-    if (lead.stage === 'Deal Won') counts.won += 1;
-    if (lead.stage === 'Deal Lost') counts.lost += 1;
-    if (lead.stage === 'Booked') counts.booked += 1;
-    if (lead.stage === 'Interested' || lead.stage === 'Callback') counts.await += 1;
-  }
-  return counts;
-}
-
 function updateCopy(ctx, id, patch) {
   ctx.setCopies((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
 }
@@ -1340,6 +1341,72 @@ function openLeadById(ctx, id, source) {
 
 function whatsAppHref(phone) {
   return `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
+}
+
+function OverviewSkeleton({ mobile = false }) {
+  if (mobile) {
+    return (
+      <div className="page-in">
+        <div className="m-kpis">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div className="m-card" key={index}>
+              <div className="skel skel-line" style={{ width: 72 }} />
+              <div className="skel skel-num" />
+            </div>
+          ))}
+        </div>
+        <div className="skel-block" style={{ marginTop: 20 }}>
+          <div className="skel skel-line" style={{ width: 140, marginBottom: 16 }} />
+          {Array.from({ length: 6 }, (_, index) => (
+            <div className="skel-row" key={index}>
+              <div className="skel" style={{ width: 4, height: 22, borderRadius: 4 }} />
+              <div className="skel skel-line" style={{ flex: 1 }} />
+              <div className="skel skel-line" style={{ width: 48 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="scroll page-in">
+      <div className="kpis">
+        <div className="card card-wide skel-card"><div className="skel skel-line" style={{ width: 90 }} /><div className="skel skel-chart" /><div className="skel skel-num" /></div>
+        <div className="card card-mid skel-card"><div className="skel skel-line" style={{ width: 110 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
+        <div className="card card-mid skel-card"><div className="skel skel-line" style={{ width: 80 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
+        <div className="card card-wide skel-card"><div className="skel skel-line" style={{ width: 70 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 180, marginTop: 10 }} /></div>
+      </div>
+      <div className="charts">
+        <div className="card flow-card skel-card">
+          <div className="skel skel-line" style={{ width: 140 }} />
+          <div className="skel skel-flow" />
+        </div>
+        <div className="card reply-card skel-card">
+          <div className="skel skel-line" style={{ width: 110 }} />
+          <div className="skel skel-chart" style={{ height: 140, marginTop: 18 }} />
+        </div>
+      </div>
+      <TableSkeleton />
+    </div>
+  );
+}
+
+function TableSkeleton({ compact = false }) {
+  return (
+    <div className="skel-table">
+      {Array.from({ length: compact ? 4 : 7 }, (_, index) => (
+        <div className="skel-lead" key={index} style={{ animationDelay: `${index * 50}ms` }}>
+          <div style={{ flex: 1 }}>
+            <div className="skel skel-line" style={{ width: '46%' }} />
+            <div className="skel skel-line" style={{ width: '28%', marginTop: 8 }} />
+          </div>
+          <div className="skel skel-line" style={{ width: compact ? 90 : 120 }} />
+          <div className="skel skel-line" style={{ width: 70 }} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const rootEl = document.getElementById('root');

@@ -1,0 +1,125 @@
+import { countFlow, matchesFlowFilter, reconcileLead } from '../shared/reconcile.js';
+
+const now = Date.parse('2026-08-29T18:00:00.000Z');
+
+function lead(input) {
+  return { id: input.listing?.nettikone_id || input.conversation?.source_customer_id, ...reconcileLead({ ...input, now }) };
+}
+
+const fixtures = [
+  lead({
+    listing: { nettikone_id: 'sold-1', status: 'sold', price_text: '10 000 €' },
+    conversation: { status: 'sold', interest_status: 'sold', last_inbound_at: '2026-08-01', inbound_count: 1 },
+  }),
+  lead({
+    listing: { nettikone_id: 'int-1', status: 'interested' },
+    conversation: { status: 'interested', interest_status: 'interested', last_inbound_at: '2026-08-20', inbound_count: 1 },
+  }),
+  lead({
+    listing: { nettikone_id: 'book-1', status: 'replied' },
+    conversation: {
+      status: 'replied',
+      interest_status: 'unclear',
+      last_inbound_at: '2026-08-29',
+      inbound_count: 2,
+      calendar_booking: { event_id: 'e1', start: '2026-08-29T10:00:00.000Z', status: 'booked' },
+    },
+  }),
+  lead({
+    listing: { nettikone_id: 'old-book', status: 'interested' },
+    conversation: {
+      status: 'interested',
+      interest_status: 'interested',
+      last_inbound_at: '2026-07-21',
+      inbound_count: 1,
+      calendar_booking: { event_id: 'old', start: '2026-07-21T16:00:00.000Z', status: 'booked', attendee_response: 'declined' },
+    },
+  }),
+  lead({
+    listing: { nettikone_id: 'silent', status: 'contacted' },
+    conversation: { status: 'contacted', inbound_count: 0 },
+  }),
+  lead({
+    listing: { nettikone_id: 'nope', status: 'not_interested' },
+    conversation: { status: 'not_interested', interest_status: 'not_interested', last_inbound_at: '2026-08-10', inbound_count: 2 },
+  }),
+  lead({
+    listing: { nettikone_id: 'review', status: 'replied' },
+    conversation: { status: 'replied', interest_status: 'unclear', last_inbound_at: '2026-08-28', inbound_count: 1 },
+  }),
+  lead({
+    listing: { nettikone_id: 'mixed', status: 'not_interested' },
+    conversation: {
+      status: 'not_interested',
+      interest_status: 'not_interested',
+      last_inbound_at: '2026-08-12',
+      inbound_count: 2,
+      messages: [
+        { direction: 'inbound', classification: 'not_interested' },
+        { direction: 'inbound', classification: 'interested' },
+      ],
+    },
+  }),
+];
+
+const counts = countFlow(fixtures, { eligible: 10 });
+const expectCounts = {
+    messaged: 8,
+    replied: 7,
+    noreply: 1,
+    interested: 2,
+    notint: 2,
+  review: 1,
+  won: 0,
+  lost: 1,
+  booked: 1,
+  await: 2,
+};
+
+const stages = Object.fromEntries(fixtures.map((row) => [row.id, row.stage]));
+const expectStages = {
+  'sold-1': 'Deal Lost',
+  'int-1': 'Interested',
+  'book-1': 'Booked',
+  'old-book': 'Interested',
+  silent: 'No Answer',
+  nope: 'Not Interested',
+  review: 'Review',
+  mixed: 'Not Interested',
+};
+
+let failed = 0;
+for (const [key, value] of Object.entries(expectCounts)) {
+  if (counts[key] !== value) {
+    console.error(`count ${key}: got ${counts[key]} want ${value}`);
+    failed += 1;
+  }
+}
+for (const [id, stage] of Object.entries(expectStages)) {
+  if (stages[id] !== stage) {
+    console.error(`stage ${id}: got ${stages[id]} want ${stage}`);
+    failed += 1;
+  }
+}
+
+const interested = fixtures.filter((row) => matchesFlowFilter(row, 'interested'));
+if (interested.length !== counts.interested) {
+  console.error('interested filter/count mismatch', interested.length, counts.interested);
+  failed += 1;
+}
+const lost = fixtures.filter((row) => matchesFlowFilter(row, 'lost'));
+if (lost.length !== counts.lost || lost[0]?.id !== 'sold-1') {
+  console.error('lost filter mismatch', lost.map((row) => row.id));
+  failed += 1;
+}
+const booked = fixtures.filter((row) => matchesFlowFilter(row, 'booked'));
+if (booked.length !== 1 || booked[0].id !== 'book-1') {
+  console.error('booked filter mismatch', booked.map((row) => row.id));
+  failed += 1;
+}
+
+if (failed) {
+  console.error(`FAILED ${failed}`);
+  process.exit(1);
+}
+console.log('ok', { counts, stages });

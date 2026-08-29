@@ -110,15 +110,6 @@ function App() {
   }, [queue]);
 
   useEffect(() => {
-    if (queue !== null || !leads.length) return;
-    setQueue(
-      leads
-        .filter((lead) => ['Interested', 'Callback', 'Review'].includes(lead.stage))
-        .map((lead) => lead.id)
-    );
-  }, [leads, queue]);
-
-  useEffect(() => {
     saveJson(COPIES_KEY, copies);
   }, [copies]);
 
@@ -156,6 +147,15 @@ function App() {
 
     return [...fromConversations, ...extras];
   }, [calendarCalls, conversations, listingById, pendingCallbacks]);
+
+  useEffect(() => {
+    if (queue !== null || !leads.length) return;
+    setQueue(
+      leads
+        .filter((lead) => ['Interested', 'Callback', 'Review'].includes(lead.stage))
+        .map((lead) => lead.id)
+    );
+  }, [leads, queue]);
 
   const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null;
   const selectedListing = listings.find((listing) => listing.id === selectedListingId) || listings[0] || null;

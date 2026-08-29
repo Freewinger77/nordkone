@@ -1158,10 +1158,12 @@ function LeadSheet({ ctx }) {
         <button className="btn btn-ring" onClick={() => ctx.toggleQueue(lead.id)} style={{ flex: 1, height: 48 }} type="button">
           {ctx.queue.includes(lead.id) ? 'In work queue' : 'Add to work queue'}
         </button>
-        <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
-          <WhatsAppMark size={18} />
-          Open chat
-        </a>
+        {ctx.leadTab === 'chat' ? null : (
+          <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
+            <WhatsAppMark size={18} />
+            Open chat
+          </a>
+        )}
       </div>
     </div>
   );

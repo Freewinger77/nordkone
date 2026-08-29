@@ -30,14 +30,14 @@ if (keys.includes('won')) {
   failed += 1;
 }
 
-for (const needed of ['messaged->replied', 'replied->interested', 'replied->review', 'interested->await', 'interested->booked', 'interested->lost']) {
+for (const needed of ['messaged->replied', 'replied->interested', 'interested->await', 'interested->booked', 'interested->review', 'interested->lost']) {
   if (!links.includes(needed)) {
     console.error('missing link', needed, links);
     failed += 1;
   }
 }
 
-if (links.some((link) => link.includes('won') || link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('booked->'))) {
+if (links.some((link) => link.includes('won') || link.startsWith('replied->review') || link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('booked->'))) {
   console.error('zero or skip links should not render', links);
   failed += 1;
 }

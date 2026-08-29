@@ -11,7 +11,8 @@
     "start": "node server.js",
     "scrape": "node scripts/scrape-nettikone.js",
     "scrape:sample": "node scripts/scrape-nettikone.js --category kaivinkone --posted-by S --pages 1 --limit 20 --dry-run",
-    "check": "node --check server.js && node --check api/index.js && node --check api/routes/listings.js && node --check api/routes/settings.js && node --check api/routes/webhooks.js && node --check api/routes/scrape.js && node --check scripts/scrape-nettikone.js"
+    "check": "node --check server.js && node --check api/index.js && node --check api/routes/listings.js && node --check api/routes/settings.js && node --check api/routes/webhooks.js && node --check api/routes/scrape.js && node --check scripts/scrape-nettikone.js && node --check shared/reconcile.js && node scripts/test-reconcile.js",
+    "test:reconcile": "node scripts/test-reconcile.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",

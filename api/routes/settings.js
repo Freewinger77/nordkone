@@ -28,16 +28,26 @@ router.put('/', async (req, res) => {
     return res.status(400).json({ error: 'No supported settings provided' });
   }
 
-  const { error } = await supabase
+  if ('outbound_enabled' in updates) {
+    updates.outbound_enabled = updates.outbound_enabled === true || updates.outbound_enabled === 'true';
+  }
+  if ('daily_cap' in updates) {
+    const cap = Number(updates.daily_cap);
+    updates.daily_cap = Number.isFinite(cap) ? Math.max(0, Math.min(cap, 500)) : 0;
+  }
+
+  const { data, error } = await supabase
     .from('campaign_client_config')
     .update({
       ...updates,
       updated_at: new Date().toISOString(),
     })
-    .eq('client_key', CLIENT_KEY);
+    .eq('client_key', CLIENT_KEY)
+    .select('*')
+    .maybeSingle();
 
   if (error) throw error;
-  res.json({ ok: true });
+  res.json({ ok: true, settings: data });
 });
 
 export default router;

@@ -1,3 +1,5 @@
+import { reconcileLead } from '../../../shared/reconcile.js';
+
 export const DESK_STATUSES = [
   { label: 'Interested', dot: 'rgb(113,221,140)' },
   { label: 'No Answer', dot: 'rgb(255,204,0)' },
@@ -13,87 +15,20 @@ export const DESK_STATUSES = [
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
 
 export const QUEUE_KEY = 'nordkone-work-queue-v2';
-export const COPIES_KEY = 'nordkone-message-copies';
 
-export const DEFAULT_COPIES = [
-  {
-    id: 'c1',
-    name: 'A1',
-    limit: '30',
-    on: true,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka! Sulla oli Nettikoneessa {kone} myynnissä. Onko se edelleen kaupan?',
-  },
-  {
-    id: 'c2',
-    name: 'A2',
-    limit: '15',
-    on: false,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka! Näin {kone} ilmoituksen Nettikoneessa. Autamme myymään koneen puolestasi – kuvaus, markkinointi ja esittely. Onko kone vielä kaupan?',
-  },
-  {
-    id: 'c3',
-    name: 'B1',
-    limit: '40',
-    on: true,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka, tässä NordKone! Sulla on {kone} myynnissä Nettikoneessa. Meillä on ostajia tälle konetyypille – onko se vielä vapaana?',
-  },
-];
-
-export const FLOW_FILTERS = {
-  replied: { label: 'Replied', test: (lead) => lead.stage !== 'No Answer' },
-  noreply: { label: 'No reply', test: (lead) => lead.stage === 'No Answer' },
-  interested: {
-    label: 'Interested',
-    test: (lead) => ['Interested', 'Callback', 'Booked', 'Deal Won', 'Deal Lost'].includes(lead.stage),
-  },
-  notint: {
-    label: 'Not interested',
-    test: (lead) => lead.stage === 'Not Interested' || lead.stage === 'Opted Out',
-  },
-  review: { label: 'Review', test: (lead) => lead.stage === 'Review' },
-  won: { label: 'Deal won', test: (lead) => lead.stage === 'Deal Won' },
-  lost: { label: 'Deal lost', test: (lead) => lead.stage === 'Deal Lost' },
-  booked: { label: 'Booked', test: (lead) => lead.stage === 'Booked' },
-  await: {
-    label: 'Awaiting booking',
-    test: (lead) => lead.stage === 'Interested' || lead.stage === 'Callback',
-  },
-};
+export {
+  FLOW_FILTERS,
+  countFlow,
+  matchesFlowFilter,
+  reconcileLead,
+} from '../../../shared/reconcile.js';
 
 export function statusDot(label) {
   return STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
 }
 
-export function listingToDeskStatus(listing = {}, conversation = {}) {
-  const stored = listing.desk_status || conversation.desk_status || listing.raw_data?.desk_status;
-  if (stored && STATUS_DOT[stored]) return stored;
-
-  const derived = conversation.derived_status || conversation.interest_status || listing.status;
-  const map = {
-    eligible: 'Eligible',
-    contacted: 'No Answer',
-    replied: 'Review',
-    interested: 'Interested',
-    sold: 'Deal Lost',
-    not_interested: 'Not Interested',
-    opted_out: 'Opted Out',
-    needs_human: 'Review',
-    needs_review: 'Review',
-    machine_available: 'Interested',
-    ready_for_call: 'Callback',
-    booked: 'Booked',
-    opt_out: 'Opted Out',
-  };
-  return map[derived] || 'Review';
+export function listingToDeskStatus(listing = {}, conversation = {}, calendarCalls = []) {
+  return reconcileLead({ listing, conversation, calendarCalls }).stage;
 }
 
 export function listingStatusLabel(status) {
@@ -309,10 +244,10 @@ export function buildFlow(counts, activeStage) {
       { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
     ],
     [
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, interested), c: 'rgb(113,221,140)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, interested), c: 'rgb(255,71,71)' },
-      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, interested), c: 'rgb(79,80,127)' },
-      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, interested), c: 'rgb(255,204,0)' },
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, replied), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
+      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, replied), c: 'rgb(79,80,127)' },
+      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, replied), c: 'rgb(255,204,0)' },
     ],
   ];
 
@@ -322,9 +257,9 @@ export function buildFlow(counts, activeStage) {
     ['replied', 'interested', interested],
     ['replied', 'notint', notint],
     ['replied', 'review', review],
-    ['interested', 'won', won],
-    ['interested', 'lost', lost],
-    ['interested', 'booked', booked],
+    ['replied', 'won', won],
+    ['replied', 'lost', lost],
+    ['replied', 'booked', booked],
     ['interested', 'await', awaiting],
   ];
 

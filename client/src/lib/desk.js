@@ -12,7 +12,7 @@ export const DESK_STATUSES = [
 
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
 
-export const QUEUE_KEY = 'nordkone-work-queue';
+export const QUEUE_KEY = 'nordkone-work-queue-v2';
 export const COPIES_KEY = 'nordkone-message-copies';
 
 export const DEFAULT_COPIES = [

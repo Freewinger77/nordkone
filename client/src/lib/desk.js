@@ -278,10 +278,10 @@ export function buildFlow(counts, activeStage) {
       { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
     ],
     [
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, interested), c: 'rgb(113,221,140)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, interested), c: 'rgb(255,71,71)' },
-      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, interested), c: 'rgb(79,80,127)' },
-      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, interested), c: 'rgb(255,204,0)' },
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, replied), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
+      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, replied), c: 'rgb(79,80,127)' },
+      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, replied), c: 'rgb(255,204,0)' },
     ],
   ];
 
@@ -291,9 +291,9 @@ export function buildFlow(counts, activeStage) {
     ['replied', 'interested', interested],
     ['replied', 'notint', notint],
     ['replied', 'review', review],
-    ['interested', 'won', won],
-    ['interested', 'lost', lost],
-    ['interested', 'booked', booked],
+    ['replied', 'won', won],
+    ['replied', 'lost', lost],
+    ['replied', 'booked', booked],
     ['interested', 'await', awaiting],
   ];
 

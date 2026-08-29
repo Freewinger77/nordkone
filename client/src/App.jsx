@@ -3,8 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { apiGet, apiSend } from './lib/api.js';
 import { Glyph } from './lib/icons.jsx';
 import {
-  COPIES_KEY,
-  DEFAULT_COPIES,
   DESK_STATUSES,
   FLOW_FILTERS,
   QUEUE_KEY,
@@ -47,7 +45,6 @@ function App() {
     const stored = loadJson(QUEUE_KEY, null);
     return Array.isArray(stored) ? stored : null;
   });
-  const [copies, setCopies] = useState(() => loadJson(COPIES_KEY, DEFAULT_COPIES));
   const [stage, setStage] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -110,9 +107,6 @@ function App() {
     if (queue !== null) saveJson(QUEUE_KEY, queue);
   }, [queue]);
 
-  useEffect(() => {
-    saveJson(COPIES_KEY, copies);
-  }, [copies]);
 
   const listingById = useMemo(() => {
     const map = new Map();
@@ -260,7 +254,7 @@ function App() {
           nettikone_id: listing.nettikone_id,
           listing_id: listing.id,
           number: listing.normalized_phone,
-          message: buildOutboundMessage(listing.machine_title, copies.find((copy) => copy.on)?.text),
+          message: buildOutboundMessage(listing.machine_title),
         },
       });
       await load();
@@ -331,7 +325,6 @@ function App() {
     bookedLeads,
     canUseControls,
     capDraft,
-    copies,
     dailyCap,
     error,
     filter,
@@ -388,11 +381,11 @@ function App() {
         document.getElementById('lead-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     },
+    remainingToday: control?.remaining_today ?? Math.max(dailyCap - sentToday, 0),
     runScrape,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
     sendListing,
     setCapDraft,
-    setCopies,
     setDeskStatus,
     setLeadTab,
     setMenuFor,
@@ -504,7 +497,9 @@ function Sidebar({ ctx }) {
         </div>
         <div className="bar"><i style={{ width: ctx.obPct }} /></div>
         <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</div>
-        <div className="muted">{ctx.outboundOn ? 'Next around 14:09' : 'Nothing queued'}</div>
+        <div className="muted">
+          {!ctx.outboundOn ? 'WF-1 paused' : ctx.remainingToday <= 0 ? 'Daily cap reached' : `${ctx.remainingToday} left today`}
+        </div>
         {ctx.canUseControls ? (
           <button className="ob-link" onClick={ctx.openModal} type="button">Open controls →</button>
         ) : null}
@@ -1067,46 +1062,21 @@ function OutboundModal({ ctx, onClose }) {
         </div>
         <div style={{ marginTop: 24 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>Daily cap</div>
-          <div className="muted">Total first messages across all copies.</div>
+          <div className="muted">WF-1 first messages today. Same cap the previous desk used.</div>
           <div className="row" style={{ marginTop: 12 }}>
             <input className="cap-input" min="0" onChange={(event) => ctx.setCapDraft(event.target.value)} type="number" value={ctx.capDraft} />
             <button className="btn btn-ring" disabled={ctx.saving} onClick={ctx.saveCap} style={{ height: 40, padding: '0 18px' }} type="button">Save cap</button>
             <div style={{ flex: 1 }}>
-              <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent today</div>
+              <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent today{ctx.remainingToday <= 0 ? ' · cap reached' : ` · ${ctx.remainingToday} left`}</div>
               <div className="bar" style={{ marginTop: 6 }}><i style={{ width: ctx.obPct }} /></div>
             </div>
           </div>
         </div>
         <div style={{ height: 1, background: 'rgba(0,0,0,0.04)', margin: '24px 0' }} />
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Message copies</div>
-          <div className="muted">{'Edit the text and daily limit on each card. Use the switch to include a copy in today\'s send. {kone} is replaced with the machine name from the listing.'}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
-            {ctx.copies.map((copy) => (
-              <div className="copy-card" key={copy.id} style={{ background: copy.on ? 'rgb(255,255,255)' : 'rgb(249,249,250)' }}>
-                <div className="row">
-                  <span style={{ fontWeight: 600, width: 32 }}>{copy.name}</span>
-                  <span className="muted">Daily limit</span>
-                  <input className="copy-limit" onChange={(event) => updateCopy(ctx, copy.id, { limit: event.target.value })} value={copy.limit} />
-                  <span className="grow" />
-                  <span className="muted" style={{ color: copy.on ? 'rgb(0,0,0)' : 'rgba(0,0,0,0.4)', fontWeight: 500 }}>{copy.on ? 'On' : 'Off'}</span>
-                  <button className={`switch sm ${copy.on ? 'on' : ''}`} onClick={() => updateCopy(ctx, copy.id, { on: !copy.on })} type="button"><i /></button>
-                  <button className="sq" onClick={() => ctx.setCopies((rows) => rows.filter((row) => row.id !== copy.id))} type="button">×</button>
-                </div>
-                <textarea className="copy-text" onChange={(event) => updateCopy(ctx, copy.id, { text: event.target.value })} rows={3} value={copy.text} />
-              </div>
-            ))}
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn btn-dark" type="button">Save copies</button>
-            <button
-              className="btn btn-ring"
-              onClick={() => ctx.setCopies((rows) => [...rows, { id: `c${Date.now()}`, name: `C${rows.length + 1}`, limit: '10', on: false, text: DEFAULT_COPIES[0].text }])}
-              type="button"
-            >
-              Add a copy
-            </button>
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Locked first message</div>
+          <div className="muted">WF-1 always sends this copy. Machine title replaces the listing name.</div>
+          <div className="outbound-preview" style={{ marginTop: 12 }}>{buildOutboundMessage('Hitachi ZX 225')}</div>
         </div>
         <div className="m-card" style={{ marginTop: 24, background: 'rgb(249,249,250)', boxShadow: 'none' }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>Consent and opt-out</div>
@@ -1323,10 +1293,6 @@ function scrapedCount(summary) {
     (summary.not_interested_listings || 0) +
     (summary.opted_out_listings || 0)
   );
-}
-
-function updateCopy(ctx, id, patch) {
-  ctx.setCopies((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
 }
 
 function leadPos(ctx) {

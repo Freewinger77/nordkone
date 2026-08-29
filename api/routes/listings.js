@@ -717,8 +717,8 @@ function buildConversationMessages(session = {}, inboundEvents = []) {
 }
 
 function extractCalendarMetadata(event = {}, session = {}) {
-  const rawEvent = event.raw_event || {};
-  const rawSession = session.raw_data || {};
+  const rawEvent = event?.raw_event || {};
+  const rawSession = session?.raw_data || {};
   const candidate =
     rawEvent.calendar ||
     rawEvent.calendar_booking ||
@@ -910,7 +910,7 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   const listingStatus = listing?.status || '';
   const sessionStatus = session?.status || '';
   const interest = session?.interest_status || listing?.interest_status || '';
-  const booking = extractCalendarMetadata(events[events.length - 1] || {}, session) || bookingFromRecord(session);
+  const booking = extractCalendarMetadata(events[events.length - 1] || {}, session || {}) || bookingFromRecord(session || {});
 
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';

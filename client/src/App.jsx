@@ -1,236 +1,93 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { apiGet, apiSend } from './lib/api.js';
+import { Glyph } from './lib/icons.jsx';
+import {
+  COPIES_KEY,
+  DEFAULT_COPIES,
+  DESK_STATUSES,
+  FLOW_FILTERS,
+  QUEUE_KEY,
+  bookedSpark,
+  buildFlow,
+  buildOutboundMessage,
+  buildWeek,
+  cut,
+  formatEuro,
+  formatHelsinkiTime,
+  isSuspiciousPrice,
+  listingStatusLabel,
+  listingToDeskStatus,
+  loadJson,
+  parseEuroAmount,
+  poly,
+  relativeAgo,
+  saveJson,
+  smooth,
+  statusDot,
+  weekdayReplySeries,
+} from './lib/desk.js';
 import './styles.css';
 
-const DASHBOARD_MODE = import.meta.env.VITE_DASHBOARD_MODE || 'admin';
-const isFinnishMode = DASHBOARD_MODE === 'client_fi';
-const canUseControls = !isFinnishMode;
-
-const STRINGS = {
-  en: {
-    title: 'NordKone Lead Desk',
-    subtitle: 'Follow seller conversations, interested leads, and booked callback work from one calm workspace.',
-    loadingTitle: 'Loading dashboard',
-    loadingSubtitle: 'Fetching leads, chats, and calendar state.',
-    refresh: 'Refresh desk',
-    refreshing: 'Refreshing...',
-    rowsLoaded: 'rows loaded',
-    tabs: {
-      listings: 'Listings',
-      leads: 'Chats',
-      calendar: 'Calendar',
-    },
-    cards: {
-      ready: ['Ready to contact', 'Eligible seller phones waiting in queue'],
-      contacted: ['Contacted', 'WhatsApp sessions opened'],
-      replies: ['Replies', 'Inbound seller responses'],
-      machineAvailable: ['Machine Available', 'Seller confirmed the machine is still for sale'],
-      interested: ['Interested', 'Hand-off candidates'],
-      readyForCall: ['Ready for call', 'Seller gave call permission or timing'],
-      booked: ['Booked', 'Real calendar-backed calls'],
-      needsReview: ['Needs review', 'Ambiguous or risky messages'],
-      optOut: ['Opt out', 'Do-not-contact requests'],
-    },
-    controls: {
-      eyebrow: 'WF-1 Control',
-      active: 'Outbound active',
-      paused: 'Outbound paused',
-      helper: 'WF-1 only receives candidates when this is active and the daily cap still has room.',
-      activate: 'Activate WF-1',
-      pause: 'Pause WF-1',
-      dailyCap: 'Daily cap',
-      saveCap: 'Save cap',
-      scraperEyebrow: 'Scraper',
-      scraperTitle: 'Find new leads',
-      scraperHelper: 'Scans Nettikone until it finds fresh eligible sellers or hits the safety caps.',
-      scraperButton: 'Find new leads',
-      scraperBusy: 'Searching...',
-    },
-    listings: {
-      eyebrow: 'Listing queue',
-      title: 'Scraped machinery listings',
-      status: 'Status',
-      search: 'Search listings',
-      placeholder: 'Machine, phone, seller, Nettikone ID',
-      visible: 'visible',
-      machine: 'Machine',
-      price: 'Price',
-      phone: 'Phone',
-      source: 'Source',
-      noRows: 'No listings found.',
-      open: 'Open',
-      outboundPreview: 'Outbound preview',
-      notes: 'Listing notes',
-    },
-    leads: {
-      eyebrow: 'Lead inbox',
-      title: 'Seller conversations',
-      sessions: 'sessions',
-      sellerMachine: 'Seller / Machine',
-      status: 'Status',
-      lastMessage: 'Last message',
-      chat: 'Chat',
-      viewChat: 'View chat',
-      noRows: 'No conversations yet.',
-      select: 'Select a lead to view chat.',
-      session: 'Chat session',
-      listing: 'Listing',
-      noMessages: 'No stored messages for this session.',
-    },
-    calendar: {
-      eyebrow: 'Call calendar',
-      title: 'Booked calls',
-      helper: 'Real calendar events for Roope and the NordKone team.',
-      calls: 'calls',
-      empty: 'No booked calls in the calendar yet.',
-      pendingTitle: 'Waiting for call booking',
-      pendingHelper: 'Interested leads that need a call but are not calendar events.',
-      assigned: 'Assigned',
-      requested: 'Requested',
-      latest: 'Latest message',
-      openChat: 'Open chat',
-    },
-  },
-  fi: {
-    title: 'NordKone liidipöytä',
-    subtitle: 'Seuraa myyjien keskusteluja, kiinnostuneita liidejä ja sovittuja soittoja selkeästä näkymästä.',
-    loadingTitle: 'Ladataan näkymää',
-    loadingSubtitle: 'Haetaan liidit, keskustelut ja kalenteritiedot.',
-    refresh: 'Päivitä näkymä',
-    refreshing: 'Päivitetään...',
-    rowsLoaded: 'riviä ladattu',
-    tabs: {
-      listings: 'Liidit',
-      leads: 'Keskustelut',
-      calendar: 'Kalenteri',
-    },
-    cards: {
-      ready: ['Valmiit liidit', 'Kontaktoimattomat myyjät jonossa'],
-      contacted: ['Kontaktoitu', 'Avatut WhatsApp-keskustelut'],
-      replies: ['Vastaukset', 'Myyjien saapuneet viestit'],
-      machineAvailable: ['Kone saatavilla', 'Myyjä vahvisti että kone on vielä myynnissä'],
-      interested: ['Kiinnostuneet', 'Liidit jatkoon'],
-      readyForCall: ['Valmis soittoon', 'Myyjä antoi soittoajan tai luvan soittaa'],
-      booked: ['Varattu', 'Oikeat kalenterivaraukset'],
-      needsReview: ['Tarkistettava', 'Epäselvät tai tärkeät viestit'],
-      optOut: ['Ei yhteyttä', 'Älä kontaktoi -pyynnöt'],
-    },
-    controls: {},
-    listings: {
-      eyebrow: 'Liidijono',
-      title: 'Nettikone-ilmoitukset',
-      status: 'Tila',
-      search: 'Hae liidejä',
-      placeholder: 'Kone, puhelin, myyjä, Nettikone ID',
-      visible: 'näkyvissä',
-      machine: 'Kone',
-      price: 'Hinta',
-      phone: 'Puhelin',
-      source: 'Lähde',
-      noRows: 'Liidejä ei löytynyt.',
-      open: 'Avaa',
-      outboundPreview: 'Ensiviestin esikatselu',
-      notes: 'Ilmoituksen tiedot',
-    },
-    leads: {
-      eyebrow: 'Keskustelut',
-      title: 'Myyjien keskustelut',
-      sessions: 'keskustelua',
-      sellerMachine: 'Myyjä / kone',
-      status: 'Tila',
-      lastMessage: 'Viimeisin viesti',
-      chat: 'Keskustelu',
-      viewChat: 'Näytä',
-      noRows: 'Keskusteluja ei vielä ole.',
-      select: 'Valitse keskustelu.',
-      session: 'Keskustelu',
-      listing: 'Ilmoitus',
-      noMessages: 'Keskustelulle ei ole tallennettu viestejä.',
-    },
-    calendar: {
-      eyebrow: 'Soittokalenteri',
-      title: 'Varatut soitot',
-      helper: 'Roopea ja NordKone-tiimiä varten luodut kalenteritapahtumat.',
-      calls: 'soittoa',
-      empty: 'Kalenterissa ei ole vielä varattuja soittoja.',
-      pendingTitle: 'Odottaa soiton varausta',
-      pendingHelper: 'Kiinnostuneet liidit, joille tarvitaan soitto mutta ei kalenteritapahtumaa.',
-      assigned: 'Vastuuhenkilö',
-      requested: 'Pyydetty',
-      latest: 'Viimeisin viesti',
-      openChat: 'Avaa keskustelu',
-    },
-  },
-};
-
-const STATUS_OPTIONS = [
-  ['all', 'All', 'Kaikki'],
-  ['eligible', 'Eligible', 'Valmis'],
-  ['contacted', 'Contacted', 'Kontaktoitu'],
-  ['replied', 'Replied', 'Vastannut'],
-  ['interested', 'Interested', 'Kiinnostunut'],
-  ['sold', 'Sold', 'Myyty'],
-  ['not_interested', 'Not interested', 'Ei kiinnostunut'],
-  ['opted_out', 'Opted out', 'Estetty'],
-  ['needs_human', 'Needs human', 'Vaatii ihmisen'],
-];
+const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
 
 function App() {
-  const t = isFinnishMode ? STRINGS.fi : STRINGS.en;
+  const [view, setView] = useState('overview');
+  const [from, setFrom] = useState('overview');
+  const [vw, setVw] = useState(typeof window === 'undefined' ? 1440 : window.innerWidth);
   const [summary, setSummary] = useState(null);
   const [listings, setListings] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [calendarCalls, setCalendarCalls] = useState([]);
   const [pendingCallbacks, setPendingCallbacks] = useState([]);
-  const [activeTab, setActiveTab] = useState('calendar');
-  const [conversationFilter, setConversationFilter] = useState('interested');
-  const [status, setStatus] = useState('all');
-  const [q, setQ] = useState('');
-  const [selected, setSelected] = useState(null);
-  const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [settings, setSettings] = useState(null);
-  const [dailyCapDraft, setDailyCapDraft] = useState('20');
-  const [scrapeResult, setScrapeResult] = useState(null);
-  const [error, setError] = useState('');
+  const [control, setControl] = useState(null);
+  const [queue, setQueue] = useState(() => {
+    const stored = loadJson(QUEUE_KEY, null);
+    return Array.isArray(stored) ? stored : null;
+  });
+  const [copies, setCopies] = useState(() => loadJson(COPIES_KEY, DEFAULT_COPIES));
+  const [stage, setStage] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [modal, setModal] = useState(false);
+  const [advOpen, setAdvOpen] = useState(true);
+  const [leadTab, setLeadTab] = useState('chat');
+  const [menuFor, setMenuFor] = useState(null);
+  const [selectedLeadId, setSelectedLeadId] = useState(null);
+  const [selectedListingId, setSelectedListingId] = useState(null);
+  const [capDraft, setCapDraft] = useState('20');
   const [loading, setLoading] = useState(true);
-  const [savingSettings, setSavingSettings] = useState(false);
   const [scraping, setScraping] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [scrapeNote, setScrapeNote] = useState('');
+
+  const isDesktop = vw >= 1120;
 
   async function load() {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ status, limit: '100' });
-      if (q.trim()) params.set('q', q.trim());
-
-      const [summaryData, listingData, settingsData, conversationData, callsData] = await Promise.all([
+      const [summaryData, listingData, conversationData, callsData, settingsData, candidateData] = await Promise.all([
         apiGet('/api/summary'),
-        apiGet(`/api/listings?${params.toString()}`),
+        apiGet('/api/listings?status=all&limit=200'),
+        apiGet('/api/conversations?limit=100'),
+        apiGet('/api/calendar-calls?limit=150'),
         apiGet('/api/settings'),
-        apiGet('/api/conversations?limit=75'),
-        apiGet('/api/calendar-calls?limit=75'),
+        apiGet('/api/outbound/candidates?limit=1').catch(() => ({ control: null })),
       ]);
-
       setSummary(summaryData);
       setListings(listingData.listings || []);
-      setSelected((current) => current || listingData.listings?.[0] || null);
-      setSettings(settingsData.settings || null);
-      setDailyCapDraft(String(settingsData.settings?.daily_cap ?? 20));
       setConversations(conversationData.conversations || []);
-      setCalendarCalls(
-        callsData.booked_calls ||
-          (callsData.calls || []).filter((call) => call.scheduled_start || call.calendar_event_id)
-      );
-      setPendingCallbacks(
-        callsData.pending_callbacks ||
-          (callsData.calls || []).filter((call) => !call.scheduled_start && !call.calendar_event_id)
-      );
-      setSelectedConversationId((current) => {
-        const rows = conversationData.conversations || [];
-        if (current && rows.some((conversation) => conversation.session_id === current)) return current;
-        return rows[0]?.session_id || null;
-      });
+      setCalendarCalls(callsData.booked_calls || []);
+      setPendingCallbacks(callsData.pending_callbacks || []);
+      setSettings(settingsData.settings || null);
+      setCapDraft(String(settingsData.settings?.daily_cap ?? 20));
+      setControl(candidateData.control || null);
+      setSelectedListingId((current) => current || listingData.listings?.[0]?.id || null);
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -240,137 +97,134 @@ function App() {
 
   useEffect(() => {
     load();
-  }, [status]);
+  }, []);
 
-  const cards = useMemo(
-    () => {
-      const derived = summary?.derived_status_counts || {};
-      return [
-        {
-          label: t.cards.ready[0],
-          value: derived.ready_to_contact ?? summary?.eligible_prospects ?? summary?.eligible ?? 0,
-          hint: t.cards.ready[1],
-          tone: 'primary',
-        },
-        {
-          label: t.cards.contacted[0],
-          value: summary?.contacted || summary?.contacted_listings || 0,
-          hint: t.cards.contacted[1],
-          tone: 'neutral',
-        },
-        {
-          label: t.cards.replies[0],
-          value: summary?.replied || 0,
-          hint: t.cards.replies[1],
-          tone: 'neutral',
-        },
-        {
-          label: t.cards.machineAvailable[0],
-          value: derived.machine_available || 0,
-          hint: t.cards.machineAvailable[1],
-          tone: 'source',
-        },
-        {
-          label: t.cards.interested[0],
-          value: derived.interested || 0,
-          hint: t.cards.interested[1],
-          tone: 'success',
-        },
-        {
-          label: t.cards.readyForCall[0],
-          value: derived.ready_for_call || 0,
-          hint: t.cards.readyForCall[1],
-          tone: 'warning',
-        },
-        {
-          label: t.cards.booked[0],
-          value: derived.booked || calendarCalls.length || 0,
-          hint: t.cards.booked[1],
-          tone: 'success',
-        },
-        {
-          label: t.cards.needsReview[0],
-          value: derived.needs_review || 0,
-          hint: t.cards.needsReview[1],
-          tone: 'warning',
-        },
-        {
-          label: t.cards.optOut[0],
-          value: derived.opt_out ?? summary?.opt_outs ?? 0,
-          hint: t.cards.optOut[1],
-          tone: 'neutral',
-        },
-      ];
-    },
-    [summary, calendarCalls.length, t]
-  );
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-  const filteredConversations = useMemo(() => {
-    if (conversationFilter === 'all') return conversations;
-    return conversations.filter((conversation) => {
-      const statusValue = conversation.derived_status || conversation.interest_status || conversation.status;
-      if (conversationFilter === 'interested') return statusValue === 'interested';
-      if (conversationFilter === 'replied') return Boolean(conversation.last_inbound_at);
-      if (conversationFilter === 'contacted') return statusValue === 'contacted';
-      if (conversationFilter === 'machine_available') return statusValue === 'machine_available';
-      if (conversationFilter === 'ready_for_call') return statusValue === 'ready_for_call';
-      if (conversationFilter === 'needs_review') return statusValue === 'needs_review';
-      if (conversationFilter === 'opt_out') return statusValue === 'opt_out';
-      if (conversationFilter === 'booked') {
-        return calendarCalls.some(
-          (call) => call.source_customer_id === conversation.listing?.nettikone_id || call.number === conversation.number
-        );
-      }
-      return true;
+  useEffect(() => {
+    if (queue !== null) saveJson(QUEUE_KEY, queue);
+  }, [queue]);
+
+  useEffect(() => {
+    saveJson(COPIES_KEY, copies);
+  }, [copies]);
+
+  const listingById = useMemo(() => {
+    const map = new Map();
+    for (const listing of listings) {
+      map.set(listing.nettikone_id, listing);
+      map.set(String(listing.id), listing);
+    }
+    return map;
+  }, [listings]);
+
+  const leads = useMemo(() => {
+    const fromConversations = conversations.map((conversation) => {
+      const listing = conversation.listing || listingById.get(conversation.listing?.nettikone_id) || {};
+      return toLead({ listing, conversation, calendarCalls });
     });
-  }, [calendarCalls, conversationFilter, conversations]);
 
-  const selectedConversation = useMemo(
-    () =>
-      filteredConversations.find((conversation) => conversation.session_id === selectedConversationId) ||
-      filteredConversations[0] ||
-      null,
-    [filteredConversations, selectedConversationId]
-  );
+    const seen = new Set(fromConversations.map((lead) => lead.id));
+    const extras = pendingCallbacks
+      .filter((call) => call.source_customer_id && !seen.has(call.source_customer_id))
+      .map((call) =>
+        toLead({
+          listing: call.listing || listingById.get(call.source_customer_id) || {},
+          conversation: {
+            number: call.number,
+            messages: call.latest_message
+              ? [{ id: call.id, direction: 'inbound', sender: 'Seller', message: call.latest_message, at: call.received_at }]
+              : [],
+            derived_status: 'ready_for_call',
+          },
+          calendarCalls,
+        })
+      );
 
-  const selectedMessage = selected
-    ? `Moikka! Sulla oli Nettikoneessa ${selected.machine_title} myynnissä. Onko se edelleen kaupan?`
-    : '';
-  const initialLoading = loading && !summary && !listings.length && !conversations.length;
+    return [...fromConversations, ...extras];
+  }, [calendarCalls, conversations, listingById, pendingCallbacks]);
 
-  async function updateOutboundSettings(nextSettings) {
+  useEffect(() => {
+    if (queue !== null || !leads.length) return;
+    setQueue(
+      leads
+        .filter((lead) => ['Interested', 'Callback', 'Review'].includes(lead.stage))
+        .map((lead) => lead.id)
+    );
+  }, [leads, queue]);
+
+  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null;
+  const selectedListing = listings.find((listing) => listing.id === selectedListingId) || listings[0] || null;
+
+  useEffect(() => {
+    if (view !== 'lead') return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setView(from || 'overview');
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        stepLead(1);
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        stepLead(-1);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [from, view, leads, selectedLeadId]);
+
+  function stepLead(delta) {
+    if (!leads.length) return;
+    const ids = leads.map((lead) => lead.id);
+    const index = Math.max(0, ids.indexOf(selectedLeadId));
+    setSelectedLeadId(ids[(index + delta + ids.length) % ids.length]);
+    setMenuFor(null);
+  }
+
+  function openLead(lead, source = view) {
+    setFrom(source === 'lead' ? 'overview' : source);
+    setSelectedLeadId(lead.id);
+    setLeadTab('chat');
+    setAdvOpen(true);
+    setMenuFor(null);
+    setView('lead');
+  }
+
+  function toggleQueue(id, event) {
+    event?.stopPropagation?.();
+    setQueue((current) => {
+      const rows = current || [];
+      return rows.includes(id) ? rows.filter((value) => value !== id) : [...rows, id];
+    });
+  }
+
+  async function updateSettings(next) {
     if (!canUseControls) return;
-    setSavingSettings(true);
+    setSaving(true);
     setError('');
     try {
-      await apiSend('/api/settings', {
-        method: 'PUT',
-        body: {
-          settings: nextSettings,
-        },
-      });
+      await apiSend('/api/settings', { method: 'PUT', body: { settings: next } });
       await load();
     } catch (settingsError) {
       setError(settingsError.message);
     } finally {
-      setSavingSettings(false);
+      setSaving(false);
     }
   }
 
-  async function saveDailyCap() {
-    await updateOutboundSettings({
-      daily_cap: Math.max(Number(dailyCapDraft) || 0, 0),
-    });
-  }
-
-  async function runManualScrape() {
+  async function runScrape() {
     if (!canUseControls) return;
     setScraping(true);
-    setScrapeResult(null);
     setError('');
+    setScrapeNote('');
     try {
       const result = await apiSend('/api/scrape/run?targetNew=10&maxPages=20&maxListings=30', { method: 'POST' });
-      setScrapeResult(result);
+      const stats = result.stats || {};
+      setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages`);
       await load();
     } catch (scrapeError) {
       setError(scrapeError.message);
@@ -379,655 +233,1116 @@ function App() {
     }
   }
 
-  function openConversationForCall(call) {
-    const match = conversations.find(
-      (conversation) =>
-        conversation.listing?.nettikone_id === call.source_customer_id ||
-        conversation.number === call.number ||
-        conversation.number === call.callback_number
-    );
-
-    if (match) {
-      setSelectedConversationId(match.session_id);
-      setActiveTab('leads');
+  async function setDeskStatus(lead, deskStatus) {
+    if (!canUseControls || !lead?.listingId) return;
+    setMenuFor(null);
+    setError('');
+    try {
+      await apiSend('/api/leads/status', {
+        method: 'PATCH',
+        body: { nettikone_id: lead.listingId, desk_status: deskStatus },
+      });
+      await load();
+    } catch (statusError) {
+      setError(statusError.message);
     }
   }
 
+  async function sendListing(listing) {
+    if (!canUseControls || !listing?.normalized_phone) return;
+    setSending(true);
+    setError('');
+    try {
+      await apiSend('/api/outbound/sent', {
+        method: 'POST',
+        body: {
+          nettikone_id: listing.nettikone_id,
+          listing_id: listing.id,
+          number: listing.normalized_phone,
+          message: buildOutboundMessage(listing.machine_title, copies.find((copy) => copy.on)?.text),
+        },
+      });
+      await load();
+      const lead = {
+        id: listing.nettikone_id,
+        listingId: listing.nettikone_id,
+      };
+      setSelectedLeadId(lead.id);
+      setFrom('listings');
+      setView('lead');
+    } catch (sendError) {
+      setError(sendError.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const flowCounts = useMemo(() => countFlow(leads, summary), [leads, summary]);
+  const flow = useMemo(() => buildFlow(flowCounts, stage), [flowCounts, stage]);
+  const replies = useMemo(() => weekdayReplySeries(conversations), [conversations]);
+  const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
+  const week = useMemo(() => buildWeek(weekOffset, calendarCalls), [calendarCalls, weekOffset]);
+
+  const bookedAsk = calendarCalls.reduce((sum, call) => sum + parseEuroAmount(call.listing?.price_eur || call.listing?.price_text), 0);
+  const replyTotal = replies.office.reduce((a, b) => a + b, 0) + replies.after.reduce((a, b) => a + b, 0);
+  const afterShare = replyTotal ? Math.round((replies.after.reduce((a, b) => a + b, 0) / replyTotal) * 100) : 0;
+  const kpi = {
+    booked: String(calendarCalls.length || flowCounts.booked || 0),
+    bookedDelta: calendarCalls.length ? `+${Math.min(calendarCalls.length, 2)}` : '',
+    opps: String(flowCounts.interested || 0),
+    lost: String(flowCounts.notint || 0),
+    oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    lostPct: flowCounts.replied ? `${Math.round((flowCounts.notint / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    commission: formatEuro(bookedAsk * 0.05) || '0 €',
+    commissionSub: bookedAsk ? `5% of ${formatEuro(bookedAsk)} combined asking price` : 'No booked asking prices yet',
+  };
+
+  const queueIds = queue || [];
+  const outboundOn = Boolean(settings?.outbound_enabled);
+  const sentToday = control?.sent_today ?? 0;
+  const dailyCap = Number(settings?.daily_cap ?? control?.daily_cap ?? 0);
+  const obPct = `${Math.min(100, Math.round((sentToday / Math.max(dailyCap, 1)) * 100))}%`;
+
+  const titles = { overview: 'Overview', queue: 'Work queue', calendar: 'Calendar', listings: 'Listings' };
+  const baseView = view === 'lead' ? from || 'overview' : view;
+  const nav = [
+    { id: 'overview', label: 'Overview', short: 'Overview', count: '', icon: 'ChartLineWeightRegular' },
+    { id: 'queue', label: 'Work queue', short: 'Queue', count: String(queueIds.length || ''), icon: 'TrayWeightRegular' },
+    { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String(calendarCalls.length || ''), icon: 'ClockCounterClockwiseWeightRegular' },
+    { id: 'listings', label: 'Listings', short: 'Listings', count: String(summary?.eligible || listings.length || ''), icon: 'NotebookWeightRegular' },
+  ];
+
+  const filter = stage ? FLOW_FILTERS[stage] : null;
+  const pool = filter ? leads.filter(filter.test) : leads;
+  const pageCount = Math.max(1, Math.ceil(pool.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
+  const bookedLeads = leads.filter((lead) => lead.stage === 'Booked' || calendarCalls.some((call) => call.source_customer_id === lead.listingId));
+  const waitLeads = leads.filter((lead) => lead.stage === 'Interested' || lead.stage === 'Callback');
+
+  const ctx = {
+    advOpen,
+    baseView,
+    bookedLeads,
+    canUseControls,
+    capDraft,
+    copies,
+    dailyCap,
+    error,
+    filter,
+    flow,
+    from,
+    isDesktop,
+    kpi,
+    leadTab,
+    leads,
+    listings,
+    loading,
+    menuFor,
+    modal,
+    nav,
+    obPct,
+    outboundOn,
+    page: safePage,
+    pageCount,
+    pageRows,
+    pageSize,
+    pool,
+    queue: queueIds,
+    queueLeads,
+    replies,
+    replyTotal,
+    afterShare,
+    saving,
+    scrapeNote,
+    scraping,
+    selectedLead,
+    selectedListing,
+    sending,
+    sentToday,
+    spark,
+    stage,
+    summary,
+    titles,
+    view,
+    waitLeads,
+    week,
+    weekOffset,
+    closeLead: () => setView(from || 'overview'),
+    openLead,
+    openModal: () => setModal(true),
+    pickNav: (id) => {
+      setView(id);
+      setMenuFor(null);
+    },
+    pickStage: (key) => {
+      setStage(key === 'messaged' || key === stage ? null : key);
+      setPage(1);
+    },
+    runScrape,
+    saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
+    sendListing,
+    setCapDraft,
+    setCopies,
+    setDeskStatus,
+    setLeadTab,
+    setMenuFor,
+    setPage,
+    setPageSize: (size) => {
+      setPageSize(size);
+      setPage(1);
+    },
+    setSelectedListingId,
+    setWeekOffset,
+    stepLead,
+    toggleAdv: () => setAdvOpen((value) => !value),
+    toggleOutbound: () => updateSettings({ outbound_enabled: !outboundOn }),
+    toggleQueue,
+    waitLeads,
+  };
+
   return (
-    <main className={`shell ${isFinnishMode ? 'client-mode' : 'admin-mode'}`}>
-      <header className="hero">
-        <div className="hero-copy">
-          <div className="brand-row">
-            <span className="brand-mark">NK</span>
-          </div>
-          <h1>{t.title}</h1>
-          <p>{t.subtitle}</p>
-        </div>
-      </header>
-
-      {error ? <div className="error">{error}</div> : null}
-
-      {initialLoading ? (
-        <DashboardLoading t={t} />
-      ) : (
-        <>
-          {loading ? <div className="loading-strip">{t.loadingSubtitle}</div> : null}
-
-          <section className="cards">
-            {cards.map(({ label, value, hint, tone }) => (
-              <article className={`card ${tone}`} key={label}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-                <small>{hint}</small>
-              </article>
-            ))}
-          </section>
-
-          {canUseControls ? (
-            <AdminControls
-              dailyCapDraft={dailyCapDraft}
-              runManualScrape={runManualScrape}
-              saveDailyCap={saveDailyCap}
-              savingSettings={savingSettings}
-              scrapeResult={scrapeResult}
-              scraping={scraping}
-              setDailyCapDraft={setDailyCapDraft}
-              settings={settings}
-              t={t}
-              updateOutboundSettings={updateOutboundSettings}
-            />
-          ) : null}
-
-          <section className="tabs">
-            <button className={activeTab === 'calendar' ? 'active' : ''} onClick={() => setActiveTab('calendar')}>
-              {t.tabs.calendar}
-            </button>
-            <button className={activeTab === 'leads' ? 'active' : ''} onClick={() => setActiveTab('leads')}>
-              {t.tabs.leads}
-            </button>
-            <button className={activeTab === 'listings' ? 'active' : ''} onClick={() => setActiveTab('listings')}>
-              {t.tabs.listings}
-            </button>
-          </section>
-
-          {activeTab === 'listings' ? (
-            <ListingsView
-              isFinnishMode={isFinnishMode}
-              listings={listings}
-              load={load}
-              loading={loading}
-              q={q}
-              selected={selected}
-              selectedMessage={selectedMessage}
-              setQ={setQ}
-              setSelected={setSelected}
-              setStatus={setStatus}
-              status={status}
-              t={t}
-            />
-          ) : null}
-
-          {activeTab === 'leads' ? (
-            <ConversationsView
-              conversationFilter={conversationFilter}
-              conversations={filteredConversations}
-              isFinnishMode={isFinnishMode}
-              loading={loading}
-              rawCount={conversations.length}
-              selectedConversation={selectedConversation}
-              selectedConversationId={selectedConversationId}
-              setConversationFilter={setConversationFilter}
-              setSelectedConversationId={setSelectedConversationId}
-              t={t}
-            />
-          ) : null}
-
-          {activeTab === 'calendar' ? (
-            <CalendarView
-              calls={calendarCalls}
-              isFinnishMode={isFinnishMode}
-              onOpenChat={openConversationForCall}
-              pendingCallbacks={pendingCallbacks}
-              t={t}
-            />
-          ) : null}
-        </>
-      )}
+    <main className="desk">
+      {isDesktop ? <DesktopDesk ctx={ctx} /> : <MobileDesk ctx={ctx} />}
+      {view === 'lead' && selectedLead && isDesktop ? <LeadDrawer ctx={ctx} /> : null}
+      {view === 'lead' && selectedLead && !isDesktop ? <LeadSheet ctx={ctx} /> : null}
+      {modal ? <OutboundModal ctx={ctx} onClose={() => setModal(false)} /> : null}
     </main>
   );
 }
 
-function DashboardLoading({ t }) {
+function DesktopDesk({ ctx }) {
   return (
-    <section className="loading-state" aria-live="polite">
-      <div className="panel loading-panel">
-        <div>
-          <p className="eyebrow">{t.loadingTitle}</p>
-          <h2>{t.loadingSubtitle}</h2>
-        </div>
-        <div className="loader-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
+    <div className="desk-desktop">
+      <Sidebar ctx={ctx} />
+      <div className="main">
+        <header className="topbar">
+          <div className="crumb">
+            Lead Desk&nbsp; /&nbsp; <strong>{ctx.view === 'lead' ? ctx.selectedLead?.machine : ctx.titles[ctx.baseView]}</strong>
+          </div>
+          <div className="grow" />
+          {ctx.scrapeNote ? <span className="scrape-note">{ctx.scrapeNote}</span> : null}
+          {ctx.canUseControls ? (
+            <button className="btn btn-soft" disabled={ctx.scraping} onClick={ctx.runScrape} type="button">
+              {ctx.scraping ? 'Searching...' : 'Find new leads'}
+            </button>
+          ) : null}
+        </header>
+        {ctx.error ? <div className="error">{ctx.error}</div> : null}
+        <div className="page">
+          {ctx.baseView === 'overview' ? <Overview ctx={ctx} /> : null}
+          {ctx.baseView === 'queue' ? <WorkQueue ctx={ctx} /> : null}
+          {ctx.baseView === 'calendar' ? <CalendarPage ctx={ctx} /> : null}
+          {ctx.baseView === 'listings' ? <ListingsPage ctx={ctx} /> : null}
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="cards loading-cards">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <article className="card skeleton-card" key={index}>
-            <span className="skeleton-line short" />
-            <strong className="skeleton-line number" />
-            <small className="skeleton-line" />
-          </article>
+function MobileDesk({ ctx }) {
+  return (
+    <div className="desk-mobile">
+      <div className="m-top">
+        <img src="/nordkone-logo.png" alt="NordKone" />
+        <span className="grow" />
+        <button className="m-ob" onClick={ctx.openModal} type="button">
+          <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} />
+          <span className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</span>
+        </button>
+      </div>
+      {ctx.error ? <div className="error">{ctx.error}</div> : null}
+      <div className="m-body">
+        {ctx.baseView === 'overview' ? <MobileOverview ctx={ctx} /> : null}
+        {ctx.baseView === 'queue' ? <MobileQueue ctx={ctx} /> : null}
+        {ctx.baseView === 'calendar' ? <MobileCalendar ctx={ctx} /> : null}
+        {ctx.baseView === 'listings' ? <MobileListings ctx={ctx} /> : null}
+      </div>
+      <nav className="m-tabbar">
+        {ctx.nav.map((item) => (
+          <button className={`m-tab ${ctx.baseView === item.id ? 'on' : ''}`} key={item.id} onClick={() => ctx.pickNav(item.id)} type="button">
+            <Glyph name={item.icon} size={20} />
+            <span>{item.short}</span>
+          </button>
         ))}
+      </nav>
+    </div>
+  );
+}
+
+function Sidebar({ ctx }) {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <img src="/nordkone-logo.png" alt="NordKone" />
       </div>
-
-      <section className="grid leads-grid">
-        <div className="panel skeleton-panel" />
-        <aside className="panel detail skeleton-detail" />
-      </section>
-    </section>
-  );
-}
-
-function AdminControls({
-  dailyCapDraft,
-  runManualScrape,
-  saveDailyCap,
-  savingSettings,
-  scrapeResult,
-  scraping,
-  setDailyCapDraft,
-  settings,
-  t,
-  updateOutboundSettings,
-}) {
-  return (
-    <section className="ops-grid">
-      <article className={`panel control-panel ${settings?.outbound_enabled ? 'enabled' : ''}`}>
-        <div>
-          <p className="eyebrow">{t.controls.eyebrow}</p>
-          <h2>{settings?.outbound_enabled ? t.controls.active : t.controls.paused}</h2>
-          <p>{t.controls.helper}</p>
-        </div>
-        <div className="control-actions">
-          <button
-            className={settings?.outbound_enabled ? 'danger' : 'success'}
-            disabled={savingSettings || !settings}
-            onClick={() => updateOutboundSettings({ outbound_enabled: !settings?.outbound_enabled })}
-          >
-            {settings?.outbound_enabled ? t.controls.pause : t.controls.activate}
-          </button>
-          <label>
-            <span>{t.controls.dailyCap}</span>
-            <input
-              min="0"
-              type="number"
-              value={dailyCapDraft}
-              onChange={(event) => setDailyCapDraft(event.target.value)}
-            />
-          </label>
-          <button disabled={savingSettings || !settings} onClick={saveDailyCap}>
-            {t.controls.saveCap}
-          </button>
-        </div>
-      </article>
-
-      <article className="panel control-panel">
-        <div>
-          <p className="eyebrow">{t.controls.scraperEyebrow}</p>
-          <h2>{t.controls.scraperTitle}</h2>
-          <p>{t.controls.scraperHelper}</p>
-          {scrapeResult ? <code className="scrape-result">{JSON.stringify(scrapeResult.stats || scrapeResult)}</code> : null}
-        </div>
-        <div className="control-actions compact">
-          <button disabled={scraping} onClick={runManualScrape}>
-            {scraping ? t.controls.scraperBusy : t.controls.scraperButton}
-          </button>
-        </div>
-      </article>
-    </section>
-  );
-}
-
-function ListingsView({
-  isFinnishMode,
-  listings,
-  load,
-  loading,
-  q,
-  selected,
-  selectedMessage,
-  setQ,
-  setSelected,
-  setStatus,
-  status,
-  t,
-}) {
-  return (
-    <>
-      <section className="toolbar">
-        <label>
-          <span>{t.listings.status}</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            {STATUS_OPTIONS.map(([value, enLabel, fiLabel]) => (
-              <option key={value} value={value}>
-                {isFinnishMode ? fiLabel : enLabel}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="search-field">
-          <span>{t.listings.search}</span>
-          <input
-            value={q}
-            onChange={(event) => setQ(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && load()}
-            placeholder={t.listings.placeholder}
-          />
-        </label>
-        <button onClick={load}>{isFinnishMode ? 'Hae' : 'Search'}</button>
-      </section>
-
-      <section className="grid">
-        <div className="panel table-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">{t.listings.eyebrow}</p>
-              <h2>{t.listings.title}</h2>
-            </div>
-            <span>
-              {listings.length} {t.listings.visible}
+      <nav className="nav">
+        {ctx.nav.map((item) => (
+          <button className={`nav-item ${ctx.baseView === item.id ? 'on' : ''}`} key={item.id} onClick={() => ctx.pickNav(item.id)} type="button">
+            <span style={{ color: ctx.baseView === item.id ? 'rgb(0,0,0)' : 'rgba(0,0,0,0.4)' }}>
+              <Glyph name={item.icon} size={18} />
             </span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>{t.listings.machine}</th>
-                <th>{t.listings.price}</th>
-                <th>{t.listings.phone}</th>
-                <th>{t.listings.source}</th>
-                <th>{t.listings.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listings.map((listing) => (
-                <tr key={listing.id} className={selected?.id === listing.id ? 'selected' : ''} onClick={() => setSelected(listing)}>
-                  <td>
-                    <strong>{listing.machine_title}</strong>
-                    <small>
-                      {listing.nettikone_id} · {listing.location || (isFinnishMode ? 'Ei sijaintia' : 'No location')}
-                    </small>
-                  </td>
-                  <td>
-                    <strong className="price">{listing.price_text || '-'}</strong>
-                    <small>{listing.model_year || (isFinnishMode ? 'Vuosi puuttuu' : 'Year unknown')}</small>
-                  </td>
-                  <td>
-                    <span>{listing.normalized_phone || '-'}</span>
-                    <small>Seller {listing.prospect_id || '-'}</small>
-                  </td>
-                  <td>
-                    <span className={`source-badge ${listing.phone_source || 'missing'}`}>
-                      {phoneSourceLabel(listing.phone_source, isFinnishMode)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`pill ${listing.status}`}>{statusLabel(listing.status, isFinnishMode)}</span>
-                  </td>
-                </tr>
-              ))}
-              {!listings.length && !loading ? (
-                <tr>
-                  <td colSpan="5" className="empty">
-                    {t.listings.noRows}
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+            <span className="nav-label">{item.label}</span>
+            <span className="nav-count">{item.count}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="grow" />
+      <div className="ob-card">
+        <div className="ob-head">
+          <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} />
+          <span className="ob-title">{ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</span>
         </div>
-
-        <ListingDetail selected={selected} selectedMessage={selectedMessage} t={t} isFinnishMode={isFinnishMode} />
-      </section>
-    </>
-  );
-}
-
-function ListingDetail({ isFinnishMode, selected, selectedMessage, t }) {
-  return (
-    <aside className="panel detail">
-      {selected ? (
-        <>
-          <div className="detail-header">
-            <div>
-              <p className="eyebrow">Listing {selected.nettikone_id}</p>
-              <h2>{selected.machine_title}</h2>
-              <div className="detail-tags">
-                <span>{selected.price_text || (isFinnishMode ? 'Ei hintaa' : 'No price')}</span>
-                <span>{selected.location || (isFinnishMode ? 'Ei sijaintia' : 'No location')}</span>
-                <span>{phoneSourceLabel(selected.phone_source, isFinnishMode)}</span>
-              </div>
-            </div>
-            <a className="open-link" href={selected.listing_url} target="_blank" rel="noreferrer">
-              {t.listings.open}
-            </a>
-          </div>
-          <div className="lead-packet">
-            <dl>
-              <dt>{t.listings.phone}</dt>
-              <dd>{selected.normalized_phone || (isFinnishMode ? 'Puuttuu' : 'Missing')}</dd>
-              <dt>Seller prospect</dt>
-              <dd>{selected.prospect_id || '-'}</dd>
-              <dt>{isFinnishMode ? 'Vuosimalli' : 'Model year'}</dt>
-              <dd>{selected.model_year || '-'}</dd>
-              <dt>{isFinnishMode ? 'Rekisteri' : 'Registration'}</dt>
-              <dd>{selected.registration_number || '-'}</dd>
-            </dl>
-          </div>
-          <div className="message-card">
-            <p className="eyebrow">{t.listings.outboundPreview}</p>
-            <div className="message">{selectedMessage}</div>
-          </div>
-          <div className="description-card">
-            <p className="eyebrow">{t.listings.notes}</p>
-            <p className="description">{selected.description || (isFinnishMode ? 'Ei kuvausta tallessa.' : 'No description stored.')}</p>
-          </div>
-        </>
-      ) : (
-        <p className="empty">{isFinnishMode ? 'Valitse liidi.' : 'Select a listing.'}</p>
-      )}
+        <div className="bar"><i style={{ width: ctx.obPct }} /></div>
+        <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</div>
+        <div className="muted">{ctx.outboundOn ? 'Next around 14:09' : 'Nothing queued'}</div>
+        {ctx.canUseControls ? (
+          <button className="ob-link" onClick={ctx.openModal} type="button">Open controls →</button>
+        ) : null}
+      </div>
     </aside>
   );
 }
 
-function ConversationsView({
-  conversationFilter,
-  conversations,
-  isFinnishMode,
-  loading,
-  rawCount,
-  selectedConversation,
-  selectedConversationId,
-  setConversationFilter,
-  setSelectedConversationId,
-  t,
-}) {
+function Overview({ ctx }) {
   return (
-    <section className="grid leads-grid">
-      <div className="panel table-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">{t.leads.eyebrow}</p>
-            <h2>{t.leads.title}</h2>
+    <div className="scroll">
+      <div className="kpis">
+        <article className="card card-wide">
+          <div className="card-title">Calls booked</div>
+          <svg viewBox="0 0 260 90" width="100%" height="72" preserveAspectRatio="none" style={{ display: 'block', margin: '12px 0 8px' }}>
+            <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 90, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          </svg>
+          <div className="kpi-row">
+            <span className="kpi-num">{ctx.kpi.booked}</span>
+            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
+            <span className="muted">from previous period</span>
           </div>
-          <span>
-            {conversations.length} / {rawCount} {t.leads.sessions}
-          </span>
-        </div>
-        <div className="chat-filter">
-          {[
-            ['interested', isFinnishMode ? 'Kiinnostuneet' : 'Interested'],
-            ['all', isFinnishMode ? 'Kaikki' : 'All'],
-            ['machine_available', isFinnishMode ? 'Kone saatavilla' : 'Machine Available'],
-            ['ready_for_call', isFinnishMode ? 'Valmis soittoon' : 'Ready for call'],
-            ['replied', isFinnishMode ? 'Vastanneet' : 'Replied'],
-            ['booked', isFinnishMode ? 'Varatut soitot' : 'Booked calls'],
-            ['needs_review', isFinnishMode ? 'Tarkistettava' : 'Needs review'],
-            ['opt_out', isFinnishMode ? 'Ei yhteyttä' : 'Opt out'],
-            ['contacted', isFinnishMode ? 'Kontaktoidut' : 'Contacted'],
-          ].map(([value, label]) => (
-            <button
-              className={conversationFilter === value ? 'active' : ''}
-              key={value}
-              onClick={() => setConversationFilter(value)}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>{t.leads.sellerMachine}</th>
-              <th>{t.leads.status}</th>
-              <th>{t.leads.lastMessage}</th>
-              <th>{t.leads.chat}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {conversations.map((conversation) => (
-              <tr
-                key={conversation.session_id}
-                className={selectedConversation?.session_id === conversation.session_id ? 'selected' : ''}
-                onClick={() => setSelectedConversationId(conversation.session_id)}
-              >
-                <td>
-                  <strong>{conversation.listing?.machine_title || conversation.number}</strong>
-                  <small>
-                    {conversation.number} · {conversation.listing?.nettikone_id || (isFinnishMode ? 'Ei ilmoitusta' : 'No listing')}
-                  </small>
-                </td>
-                <td>
-                  <span className={`pill ${conversation.derived_status || conversation.interest_status || conversation.status}`}>
-                    {statusLabel(conversation.derived_status || conversation.interest_status || conversation.status, isFinnishMode)}
-                  </span>
-                </td>
-                <td>
-                  <span>{conversation.latest_message?.message || (isFinnishMode ? 'Ei viestejä' : 'No messages yet')}</span>
-                  <small>{formatTime(conversation.latest_message?.at || conversation.updated_at)}</small>
-                </td>
-                <td>
-                  <button className="small-action" type="button">
-                    {t.leads.viewChat}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {!conversations.length && !loading ? (
-              <tr>
-                <td colSpan="4" className="empty">
-                  {t.leads.noRows}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+        </article>
+        <article className="card card-mid">
+          <div className="row">
+            <span className="dot live" />
+            <span className="card-title">Won</span>
+          </div>
+          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.opps}</div>
+          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.oppPct}</div>
+        </article>
+        <article className="card card-mid">
+          <div className="row">
+            <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
+            <span className="card-title">Lost</span>
+          </div>
+          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.lost}</div>
+          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.lostPct}</div>
+        </article>
+        <article className="card card-wide">
+          <div className="card-title">Pipeline</div>
+          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.commission}</div>
+          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.commissionSub}</div>
+          <div className="muted">From the {ctx.kpi.booked} booked calls' adverts</div>
+        </article>
       </div>
 
-      <aside className="panel detail lead-detail">
-        {selectedConversation ? (
-          <>
-            <div className="detail-header">
-              <div>
-                <p className="eyebrow">
-                  {t.leads.session} {selectedConversation.session_id}
-                </p>
-                <h2>{selectedConversation.listing?.machine_title || selectedConversation.number}</h2>
-                <div className="detail-tags">
-                  <span>{selectedConversation.number}</span>
-                  <span>
-                    {statusLabel(
-                      selectedConversation.derived_status || selectedConversation.interest_status || selectedConversation.status,
-                      isFinnishMode
-                    )}
-                  </span>
-                </div>
-              </div>
-              {selectedConversation.listing?.listing_url ? (
-                <a className="open-link" href={selectedConversation.listing.listing_url} target="_blank" rel="noreferrer">
-                  {t.leads.listing}
-                </a>
-              ) : null}
-            </div>
-            <div className="messages drawer-messages">
-              {selectedConversation.messages.map((message) => (
-                <article className={`bubble ${message.direction}`} key={message.id}>
-                  <div className="bubble-meta">
-                    <span>{message.sender}</span>
-                    <time>{formatTime(message.at)}</time>
-                  </div>
-                  <p>{message.message}</p>
-                  {message.classification ? <small>{statusLabel(message.classification, isFinnishMode)}</small> : null}
-                </article>
+      <div className="charts">
+        <article className="card flow-card">
+          <div className="wrap">
+            <span className="card-title">Campaign flow</span>
+            <span className="muted" style={{ flex: 1 }}>{scrapedCount(ctx.summary)} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
+            <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
+          </div>
+          <div className="flow-wrap">
+            <svg viewBox="0 0 1120 500" width="100%" height="300" preserveAspectRatio="none" style={{ display: 'block', height: 300 }}>
+              {ctx.flow.links.map((link) => (
+                <path d={link.d} fill="rgba(0,0,0,0.05)" key={link.d} />
               ))}
-              {!selectedConversation.messages.length ? <p className="empty">{t.leads.noMessages}</p> : null}
+              {ctx.flow.nodes.map((node) => (
+                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="4" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
+              ))}
+            </svg>
+            {ctx.flow.nodes.map((node) => (
+              <div className="flow-label" key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
+                <strong style={{ color: node.lfg }}>{node.label}</strong>
+                <span>{node.count}</span>
+              </div>
+            ))}
+          </div>
+          <div className="muted" style={{ marginTop: 12 }}>Click any stage to open the work queue filtered to it.</div>
+        </article>
+
+        <article className="card reply-card">
+          <div className="wrap">
+            <span className="card-title">Reply timing</span>
+            <span className="muted">{ctx.replyTotal} replies this week</span>
+          </div>
+          <div className="legend">
+            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(0,0,0)' }} />Office hours {ctx.replies.office.reduce((a, b) => a + b, 0)}</div>
+            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
+          </div>
+          <svg viewBox="0 0 420 190" width="100%" style={{ display: 'block', marginTop: 8, flex: 1 }}>
+            <path className="line-draw" d={smooth(ctx.replies.office, 420, 190, 14)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
+            <path className="line-draw" d={smooth(ctx.replies.after, 420, 190, 14)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
+          </svg>
+          <div className="weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
+          <div className="muted" style={{ marginTop: 12 }}>{ctx.afterShare}% of replies arrive outside office hours.</div>
+        </article>
+      </div>
+
+      <LeadTable ctx={ctx} rows={ctx.pageRows} showPager />
+    </div>
+  );
+}
+
+function WorkQueue({ ctx }) {
+  return (
+    <div className="scroll">
+      <div className="page-title">
+        <h1>Work queue</h1>
+        <span className="muted">{ctx.queueLeads.length} · open the chat to see the advert</span>
+      </div>
+      <LeadTable ctx={ctx} hideToolbar rows={ctx.queueLeads} source="queue" />
+    </div>
+  );
+}
+
+function CalendarPage({ ctx }) {
+  return (
+    <div className="scroll" style={{ paddingTop: 24 }}>
+      <div className="cal-head">
+        <h1>{ctx.week.label}</h1>
+        <span className="muted" style={{ flex: 1 }}>{ctx.week.count}</span>
+        <button className="btn btn-ring" onClick={() => ctx.setWeekOffset(0)} style={{ height: 32 }} type="button">Today</button>
+        <button className="sq lg" onClick={() => ctx.setWeekOffset((value) => value - 1)} type="button">‹</button>
+        <button className="sq lg" onClick={() => ctx.setWeekOffset((value) => value + 1)} type="button">›</button>
+      </div>
+      <div className="week-grid">
+        {ctx.week.days.map((day) => (
+          <div className={`day-col ${day.today ? 'today' : ''}`} key={day.name}>
+            <div className="day-head">
+              <span className="day-name">{day.name}</span>
+              <span className="day-num">{day.num}</span>
+            </div>
+            <div className="day-body">
+              {day.events.map((event) => (
+                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.at}</strong>
+                  <p>{event.machine}</p>
+                  <small>{event.phone}</small>
+                </button>
+              ))}
+              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="section-head">
+        <h2>Booked calls</h2>
+        <span className="muted">{ctx.bookedLeads.length} booked</span>
+      </div>
+      <LeadTable ctx={ctx} compact hideToolbar rows={ctx.bookedLeads} source="calendar" />
+      <div className="section-head">
+        <h2>Waiting for a booking</h2>
+        <span className="muted">{ctx.waitLeads.length} waiting</span>
+      </div>
+      <LeadTable ctx={ctx} compact hideToolbar rows={ctx.waitLeads} source="calendar" />
+    </div>
+  );
+}
+
+function ListingsPage({ ctx }) {
+  const listing = ctx.selectedListing;
+  return (
+    <div className="page" style={{ overflow: 'hidden' }}>
+      <div className="listings-pane">
+        <div className="list-head">
+          <h1>Scraped listings</h1>
+          <span className="muted" style={{ flex: 1 }}>{ctx.listings.length} visible · queue of {ctx.summary?.eligible || 0} eligible</span>
+        </div>
+        <div className="list-cols">
+          <span className="h" style={{ flex: 1 }}>Machine</span>
+          <span className="h" style={{ width: 110, textAlign: 'right' }}>Price</span>
+          <span className="h" style={{ width: 150 }}>Phone</span>
+          <span className="h" style={{ width: 96 }}>Status</span>
+        </div>
+        {ctx.listings.map((row) => (
+          <div className={`listing-row ${listing?.id === row.id ? 'on' : ''}`} key={row.id} onClick={() => ctx.setSelectedListingId(row.id)}>
+            <div className="col-lead">
+              <div className="machine">{row.machine_title}</div>
+              <div className="muted">{row.nettikone_id} · {row.location || 'No location'}</div>
+            </div>
+            <div className="col-price">
+              <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{row.price_text || '-'}</div>
+              <div className="muted">{row.model_year || 'Year unknown'}</div>
+            </div>
+            <div style={{ width: 150, flexShrink: 0 }}>
+              <div style={{ fontSize: 14, lineHeight: '20px' }}>{row.normalized_phone || '-'}</div>
+              <div className="muted">{row.seller_name || (row.prospect_id ? `Seller ${row.prospect_id}` : 'Seller')}</div>
+            </div>
+            <div style={{ width: 96, flexShrink: 0 }}>
+              <span className="pill">{listingStatusLabel(row.status)}</span>
+            </div>
+          </div>
+        ))}
+        {!ctx.listings.length && !ctx.loading ? <div className="muted" style={{ padding: '20px 33px' }}>No listings found.</div> : null}
+      </div>
+      <aside className="detail">
+        {listing ? (
+          <>
+            <div>
+              <div className="row" style={{ paddingBottom: 12 }}>
+                <a href={listing.listing_url} rel="noreferrer" target="_blank">
+                  <span className="row"><Glyph name="ArrowRight2" size={13} />Open ad</span>
+                </a>
+              </div>
+              <h2>{listing.machine_title}</h2>
+              <div className="photo">Advert photo</div>
+              <dl className="fields">
+                {[
+                  ['Price', listing.price_text || '-'],
+                  ['Model year', listing.model_year || '-'],
+                  ['Location', listing.location || '-'],
+                  ['Registration', listing.registration_number || 'Ei rekisterissä'],
+                  ['Phone', listing.normalized_phone || '-'],
+                  ['Seller prospect', listing.seller_name || listing.prospect_id || '-'],
+                ].map(([k, v]) => (
+                  <div className="field" key={k}><dt>{k}</dt><dd>{v}</dd></div>
+                ))}
+              </dl>
+            </div>
+            <div>
+              <div className="eyebrow">Seller's own listing notes</div>
+              <div className="notes">{listing.description || 'No description stored.'}</div>
+            </div>
+            <div>
+              <div className="eyebrow">Outbound preview</div>
+              <div className="outbound-preview">{buildOutboundMessage(listing.machine_title)}</div>
+              {ctx.canUseControls ? (
+                <button className="btn-block" disabled={ctx.sending || !listing.normalized_phone} onClick={() => ctx.sendListing(listing)} type="button">
+                  {ctx.sending ? 'Sending...' : 'Send and open session'}
+                </button>
+              ) : null}
             </div>
           </>
         ) : (
-          <p className="empty">{t.leads.select}</p>
+          <p className="muted">Select a listing.</p>
         )}
       </aside>
-    </section>
+    </div>
   );
 }
 
-function CalendarView({ calls, isFinnishMode, onOpenChat, pendingCallbacks, t }) {
-  const slots = buildCalendarSlots();
-
+function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overview' }) {
+  const rangeFrom = ctx.pool.length === 0 ? 0 : (ctx.page - 1) * ctx.pageSize + 1;
   return (
-    <section className="calendar-shell">
-      <div className="panel calendar-intro">
-        <div>
-          <p className="eyebrow">{t.calendar.eyebrow}</p>
-          <h2>{t.calendar.title}</h2>
-          <p>{t.calendar.helper}</p>
+    <>
+      {!hideToolbar ? (
+        <div className="toolbar">
+          <button className="btn btn-ring" type="button">
+            <Glyph name="FunnelSimpleWeightRegular" size={17} />
+            Filters
+          </button>
+          {ctx.filter ? (
+            <button className="btn btn-soft" onClick={() => ctx.pickStage(null)} type="button">
+              {`Filtered to ${ctx.filter.label}`} <span style={{ color: 'rgba(0,0,0,0.4)' }}>×</span>
+            </button>
+          ) : null}
+          <span className="grow" />
+          <span className="muted">{rows.length} leads</span>
+          <button className="btn" type="button">
+            <Glyph name="ArrowsDownUpWeightRegular" size={17} />
+            Last activity
+          </button>
+          <button className="btn btn-ring" onClick={() => window.location.reload()} type="button">Refresh</button>
         </div>
-        <span>
-          {calls.length} {t.calendar.calls}
-        </span>
+      ) : null}
+      <div>
+        <div className="h-cols">
+          <span className="h" style={{ flex: 1 }}>Lead</span>
+          <span className="h" style={{ width: compact ? 150 : 184 }}>Status</span>
+          <span className="h" style={{ width: 110 }}>Location</span>
+          <span className="h" style={{ width: 110, textAlign: 'right' }}>Asking price</span>
+          <span className="h" style={{ width: compact ? 60 : 160, textAlign: compact ? 'right' : 'left' }}>{compact ? '' : 'Last activity'}</span>
+          {!compact ? <span className="h" style={{ width: 84, textAlign: 'right' }}>Chat</span> : null}
+        </div>
+        {rows.map((row, index) => (
+          <div className="lead-row" key={row.id} onClick={() => ctx.openLead(row, source)} style={{ animationDelay: `${Math.min(index, 12) * 26}ms` }}>
+            <div className="col-lead">
+              <div className="machine">{cut(row.machine)}</div>
+              <div className="phone-row">
+                <Glyph name="WhatsappLogoWeightFill" size={13} />
+                <span>{row.phone}</span>
+              </div>
+            </div>
+            <div className={compact ? '' : 'col-status'} style={compact ? { width: 150, flexShrink: 0 } : undefined}>
+              <div className="status-line">
+                <span className="dot" style={{ background: statusDot(row.stage) }} />
+                <span>{row.stage}</span>
+              </div>
+              {!compact && ctx.queue.includes(row.id) ? (
+                <button className="q-chip" onClick={(event) => ctx.toggleQueue(row.id, event)} type="button">
+                  <Glyph name="ArrowLineRightWeightBold" size={11} />
+                  In queue
+                </button>
+              ) : null}
+            </div>
+            <div className="col-loc"><span style={{ fontSize: 14, lineHeight: '20px' }}>{row.location}</span></div>
+            <div className="col-price"><span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span></div>
+            <div className={compact ? '' : 'col-act'} style={compact ? { width: 60, flexShrink: 0, textAlign: 'right' } : undefined}>
+              <div style={{ fontSize: 14, lineHeight: '20px', color: compact ? 'rgba(0,0,0,0.4)' : 'rgb(0,0,0)' }}>{row.ago}</div>
+              {!compact ? <div className="snippet">{row.snippet}</div> : null}
+            </div>
+            {!compact ? (
+              <div className="col-chat">
+                {!ctx.queue.includes(row.id) ? (
+                  <button className="icon-btn" onClick={(event) => ctx.toggleQueue(row.id, event)} type="button">
+                    <Glyph name="ArrowLineRightWeightBold" size={15} />
+                  </button>
+                ) : null}
+                <button className="icon-btn dark" type="button">
+                  <Glyph name="ChatTextWeightRegular" size={17} />
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ))}
+        {!rows.length && !ctx.loading ? <div className="muted" style={{ padding: '16px 0' }}>No leads in this view.</div> : null}
       </div>
+      {showPager ? (
+        <div className="pager">
+          <span className="muted">Rows per page</span>
+          <div className="page-sizes">
+            {[25, 50, 100, 500].map((size) => (
+              <button className={`size-btn ${ctx.pageSize === size ? 'on' : ''}`} key={size} onClick={() => ctx.setPageSize(size)} type="button">{size}</button>
+            ))}
+          </div>
+          <span className="grow" />
+          <span className="muted">{rangeFrom}–{Math.min(ctx.page * ctx.pageSize, ctx.pool.length)} of {ctx.pool.length}</span>
+          <button className="sq" onClick={() => ctx.setPage(Math.max(1, ctx.page - 1))} type="button">‹</button>
+          <button className="sq" onClick={() => ctx.setPage(Math.min(ctx.pageCount, ctx.page + 1))} type="button">›</button>
+        </div>
+      ) : null}
+    </>
+  );
+}
 
-      <div className="calendar-layout">
-        <div className="panel calendar-board">
-          {slots.map((slot) => {
-            const slotCalls = calls.filter((call) => sameHour(call.scheduled_start, slot.hour));
-            return (
-              <div className="calendar-row" key={slot.label}>
-                <time>{slot.label}</time>
-                <div className="calendar-slot">
-                  {slotCalls.map((call) => (
-                    <article className="calendar-event" key={call.id}>
-                      <span>{formatCallTime(call.scheduled_start, isFinnishMode)}</span>
-                      <strong>{call.listing?.machine_title || call.source_customer_id || call.number}</strong>
-                      <small>{call.callback_number || call.number || '-'}</small>
-                      <button type="button" onClick={() => onOpenChat(call)}>
-                        {t.calendar.openChat}
-                      </button>
-                    </article>
+function LeadDrawer({ ctx }) {
+  const lead = ctx.selectedLead;
+  const inQ = ctx.queue.includes(lead.id);
+  return (
+    <div className="drawer-scrim" onClick={ctx.closeLead}>
+      <div className="drawer" onClick={(event) => event.stopPropagation()}>
+        <div className="drawer-head">
+          <button className="btn btn-ring" onClick={ctx.closeLead} type="button">‹ Back</button>
+          <div className="drawer-title">
+            <h2>{lead.machine}</h2>
+            <div className="muted">{lead.phone} · {lead.seller} · {lead.location}</div>
+          </div>
+          <div className="row" style={{ flexShrink: 0 }}>
+            <div className="rel">
+              <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} type="button">
+                <span className="dot" style={{ background: statusDot(lead.stage) }} />
+                {lead.stage} ▾
+              </button>
+              {ctx.menuFor === 'lead' ? (
+                <div className="menu wide">
+                  {DESK_STATUSES.map((option) => (
+                    <button className="menu-item" key={option.label} onClick={() => ctx.setDeskStatus(lead, option.label)} type="button">
+                      <span className="dot" style={{ background: option.dot }} />
+                      <span style={{ fontWeight: option.label === lead.stage ? 600 : 400 }}>{option.label}</span>
+                    </button>
                   ))}
                 </div>
-              </div>
-            );
-          })}
-          {!calls.length ? <p className="empty">{t.calendar.empty}</p> : null}
-        </div>
-
-        <aside className="panel pending-calls">
-          <div className="panel-heading compact-heading">
-            <div>
-              <p className="eyebrow">{t.calendar.pendingTitle}</p>
-              <h2>{pendingCallbacks.length}</h2>
+              ) : null}
             </div>
-            <span>{t.calendar.pendingHelper}</span>
+            <button
+              className="btn"
+              onClick={() => ctx.toggleQueue(lead.id)}
+              style={{ background: inQ ? 'transparent' : 'rgb(28,28,30)', color: inQ ? 'rgb(0,0,0)' : 'rgb(255,255,255)', boxShadow: inQ ? 'inset 0 0 0 1px rgba(0,0,0,0.1)' : 'none' }}
+              type="button"
+            >
+              <Glyph name="ArrowLineRightWeightBold" size={15} />
+              {inQ ? 'In work queue' : 'Add to work queue'}
+            </button>
+            <div style={{ width: 1, height: 24, background: 'rgba(0,0,0,0.1)' }} />
+            <span className="muted">{leadPos(ctx)}</span>
+            <button className="sq lg" onClick={() => ctx.stepLead(-1)} type="button">‹</button>
+            <button className="sq lg" onClick={() => ctx.stepLead(1)} type="button">›</button>
           </div>
-          <div className="pending-list">
-            {pendingCallbacks.slice(0, 8).map((call) => (
-              <article className="pending-call" key={call.id}>
-                <div>
-                  <strong>{call.listing?.machine_title || call.source_customer_id || call.number}</strong>
-                  <small>{call.callback_number || call.number || '-'}</small>
+        </div>
+        <div className="drawer-body">
+          <div className="chat-col">
+            <div className="row" style={{ padding: '16px 24px 10px 33px' }}>
+              <span className="eyebrow" style={{ flex: 1, paddingBottom: 0 }}>Conversation</span>
+              <Glyph name="WhatsappLogoWeightFill" size={14} />
+              <span className="muted">{lead.phone}</span>
+            </div>
+            <div className="chat-scroll">
+              {lead.msgs.map((message) => (
+                <article className={`bubble ${message.out ? 'out' : 'in'}`} key={message.id}>
+                  <div className="bubble-meta">
+                    <span className="eyebrow" style={{ paddingBottom: 0 }}>{message.who}</span>
+                    <span className="muted">{message.when}</span>
+                  </div>
+                  <p>{message.text}</p>
+                </article>
+              ))}
+              {!lead.msgs.length ? <p className="muted">No stored messages for this session.</p> : null}
+            </div>
+          </div>
+          {ctx.advOpen ? (
+            <div className="adv-col">
+              <div className="row" style={{ paddingBottom: 12 }}>
+                {lead.url ? (
+                  <a href={lead.url} rel="noreferrer" target="_blank">
+                    <span className="row"><Glyph name="ArrowRight2" size={13} />Open ad</span>
+                  </a>
+                ) : null}
+              </div>
+              <div className="adv-card">
+                <div className="adv-photo">Advert photo</div>
+                <div style={{ padding: '6px 20px 20px' }}>
+                  <div className="row" style={{ marginBottom: 18, alignItems: 'baseline' }}>
+                    <span className="kpi-num">{lead.price}</span>
+                    {lead.priceFlag ? <span className="flag">Check price</span> : null}
+                    <span className="grow" />
+                    <span className="muted">Nettikone {lead.listingId}</span>
+                  </div>
+                  <div className="adv-grid">
+                    {lead.fields.map((field) => (
+                      <div key={field.k}>
+                        <div className="eyebrow">{field.k}</div>
+                        <div style={{ fontSize: 14, lineHeight: '20px' }}>{field.v}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <p>{call.latest_message}</p>
-                <button type="button" onClick={() => onOpenChat(call)}>
-                  {t.calendar.openChat}
+              </div>
+              <div style={{ marginTop: 20 }}>
+                <div className="eyebrow">What the advert says</div>
+                <div className="notes" style={{ padding: 14 }}>{lead.notes}</div>
+                <div style={{ marginTop: 16 }}>
+                  <div className="eyebrow">First message we sent</div>
+                  <div className="outbound-preview" style={{ padding: 14 }}>{lead.outbound}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button className="adv-strip" onClick={ctx.toggleAdv} type="button">‹</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadSheet({ ctx }) {
+  const lead = ctx.selectedLead;
+  return (
+    <div className="sheet">
+      <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
+        <div className="row">
+          <button className="sq lg" onClick={ctx.closeLead} type="button">‹</button>
+          <span className="grow" />
+          <span className="muted">{leadPos(ctx)}</span>
+          <button className="sq lg" onClick={() => ctx.stepLead(-1)} type="button">↑</button>
+          <button className="sq lg" onClick={() => ctx.stepLead(1)} type="button">↓</button>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>{lead.machine}</div>
+          <div className="phone-row" style={{ marginTop: 3 }}>
+            <Glyph name="WhatsappLogoWeightFill" size={14} />
+            <span>{lead.phone}</span>
+          </div>
+        </div>
+        <div className="rel" style={{ marginTop: 12 }}>
+          <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40 }} type="button">
+            <span className="dot" style={{ background: statusDot(lead.stage), width: 8, height: 8 }} />
+            {lead.stage} ▾
+          </button>
+          {ctx.menuFor === 'lead' ? (
+            <div className="menu narrow">
+              {DESK_STATUSES.map((option) => (
+                <button className="menu-item" key={option.label} onClick={() => ctx.setDeskStatus(lead, option.label)} type="button">
+                  <span className="dot" style={{ background: option.dot, width: 8, height: 8 }} />
+                  {option.label}
                 </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="row" style={{ marginTop: 16, padding: 4, borderRadius: 12, background: 'rgb(249,249,250)' }}>
+          <button className="btn" onClick={() => ctx.setLeadTab('chat')} style={{ flex: 1, background: ctx.leadTab === 'chat' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'chat' ? 600 : 400 }} type="button">Chat</button>
+          <button className="btn" onClick={() => ctx.setLeadTab('advert')} style={{ flex: 1, background: ctx.leadTab === 'advert' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'advert' ? 600 : 400 }} type="button">Advert</button>
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+        {ctx.leadTab === 'chat' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {lead.msgs.map((message) => (
+              <article className={`bubble ${message.out ? 'out' : 'in'}`} key={message.id} style={{ alignSelf: message.out ? 'flex-end' : 'flex-start' }}>
+                <div className="bubble-meta">
+                  <span className="eyebrow" style={{ paddingBottom: 0 }}>{message.who}</span>
+                  <span className="muted">{message.when}</span>
+                </div>
+                <p>{message.text}</p>
               </article>
             ))}
           </div>
-        </aside>
+        ) : (
+          <div>
+            <div className="row" style={{ paddingBottom: 10 }}>
+              <span className="eyebrow" style={{ flex: 1 }}>Nettikone {lead.listingId}</span>
+              {lead.url ? <a href={lead.url} rel="noreferrer" target="_blank">Open ad</a> : null}
+            </div>
+            <div className="photo" style={{ height: 180, borderRadius: 16 }}>Advert photo</div>
+            <div className="row" style={{ margin: '14px 0', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 28, lineHeight: '34px', fontWeight: 600 }}>{lead.price}</span>
+              {lead.priceFlag ? <span className="flag">Check price</span> : null}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' }}>
+              {lead.fields.map((field) => (
+                <div key={field.k}>
+                  <div className="eyebrow">{field.k}</div>
+                  <div style={{ fontSize: 14, lineHeight: '20px' }}>{field.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 20 }}>
+              <div className="eyebrow">Seller's own listing notes</div>
+              <div className="notes">{lead.notes}</div>
+            </div>
+          </div>
+        )}
       </div>
-    </section>
+      <div style={{ flexShrink: 0, padding: '12px 16px 20px', borderTop: '1px solid rgba(0,0,0,0.04)', display: 'flex', gap: 10 }}>
+        <button className="btn btn-ring" onClick={() => ctx.toggleQueue(lead.id)} style={{ flex: 1, height: 48 }} type="button">
+          {ctx.queue.includes(lead.id) ? 'In work queue' : 'Add to work queue'}
+        </button>
+        <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
+          <Glyph name="WhatsappLogoWeightFill" size={18} />
+          Open chat
+        </a>
+      </div>
+    </div>
   );
 }
 
-function phoneSourceLabel(value, isFinnish = false) {
-  if (value === 'description') return 'Lisätiedot';
-  if (value === 'revealed_contact') return 'Näytä numero';
-  return isFinnish ? 'Puuttuu' : 'Missing';
+function OutboundModal({ ctx, onClose }) {
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="row" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Outbound</div>
+            <div className="muted" style={{ marginTop: 2 }}>First WhatsApp message, sent automatically.</div>
+          </div>
+          <button className="sq lg" onClick={onClose} type="button">×</button>
+        </div>
+        <div className="card" style={{ display: 'flex', gap: 16, marginTop: 20, padding: 16 }}>
+          <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} style={{ marginTop: 7 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}>{ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</div>
+            <div className="muted">{ctx.outboundOn ? 'Leads are picked only while this is on and the daily cap has room.' : 'No candidates are being sent.'}</div>
+          </div>
+          <button className={`switch ${ctx.outboundOn ? 'on' : ''}`} disabled={ctx.saving || !ctx.canUseControls} onClick={ctx.toggleOutbound} type="button">
+            <i />
+          </button>
+        </div>
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Daily cap</div>
+          <div className="muted">Total first messages across all copies.</div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <input className="cap-input" min="0" onChange={(event) => ctx.setCapDraft(event.target.value)} type="number" value={ctx.capDraft} />
+            <button className="btn btn-ring" disabled={ctx.saving} onClick={ctx.saveCap} style={{ height: 40, padding: '0 18px' }} type="button">Save cap</button>
+            <div style={{ flex: 1 }}>
+              <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent today</div>
+              <div className="bar" style={{ marginTop: 6 }}><i style={{ width: ctx.obPct }} /></div>
+            </div>
+          </div>
+        </div>
+        <div style={{ height: 1, background: 'rgba(0,0,0,0.04)', margin: '24px 0' }} />
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Message copies</div>
+          <div className="muted">{'Edit the text and daily limit on each card. Use the switch to include a copy in today\'s send. {kone} is replaced with the machine name from the listing.'}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+            {ctx.copies.map((copy) => (
+              <div className="copy-card" key={copy.id} style={{ background: copy.on ? 'rgb(255,255,255)' : 'rgb(249,249,250)' }}>
+                <div className="row">
+                  <span style={{ fontWeight: 600, width: 32 }}>{copy.name}</span>
+                  <span className="muted">Daily limit</span>
+                  <input className="copy-limit" onChange={(event) => updateCopy(ctx, copy.id, { limit: event.target.value })} value={copy.limit} />
+                  <span className="grow" />
+                  <span className="muted" style={{ color: copy.on ? 'rgb(0,0,0)' : 'rgba(0,0,0,0.4)', fontWeight: 500 }}>{copy.on ? 'On' : 'Off'}</span>
+                  <button className={`switch sm ${copy.on ? 'on' : ''}`} onClick={() => updateCopy(ctx, copy.id, { on: !copy.on })} type="button"><i /></button>
+                  <button className="sq" onClick={() => ctx.setCopies((rows) => rows.filter((row) => row.id !== copy.id))} type="button">×</button>
+                </div>
+                <textarea className="copy-text" onChange={(event) => updateCopy(ctx, copy.id, { text: event.target.value })} rows={3} value={copy.text} />
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button className="btn btn-dark" type="button">Save copies</button>
+            <button
+              className="btn btn-ring"
+              onClick={() => ctx.setCopies((rows) => [...rows, { id: `c${Date.now()}`, name: `C${rows.length + 1}`, limit: '10', on: false, text: DEFAULT_COPIES[0].text }])}
+              type="button"
+            >
+              Add a copy
+            </button>
+          </div>
+        </div>
+        <div className="m-card" style={{ marginTop: 24, background: 'rgb(249,249,250)', boxShadow: 'none' }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Consent and opt-out</div>
+          <div style={{ fontSize: 14, lineHeight: '20px', color: 'rgba(0,0,0,0.8)', marginTop: 4 }}>
+            Numbers come from public Nettikone listings. An opt-out reply stops all outbound to that number immediately.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function statusLabel(value, isFinnish = false) {
-  const labels = {
-    eligible: ['Eligible', 'Valmis'],
-    contacted: ['Contacted', 'Kontaktoitu'],
-    replied: ['Replied', 'Vastannut'],
-    interested: ['Interested', 'Kiinnostunut'],
-    sold: ['Sold', 'Myyty'],
-    not_interested: ['Not interested', 'Ei kiinnostunut'],
-    opted_out: ['Opted out', 'Estetty'],
-    needs_human: ['Needs human', 'Vaatii ihmisen'],
-    machine_available: ['Machine Available', 'Kone saatavilla'],
-    ready_for_call: ['Ready for call', 'Valmis soittoon'],
-    booked: ['Booked', 'Varattu'],
-    needs_review: ['Needs review', 'Tarkistettava'],
-    opt_out: ['Opt out', 'Ei yhteyttä'],
-    pending: ['Pending', 'Odottaa'],
+function MobileOverview({ ctx }) {
+  return (
+    <div>
+      <div className="m-kpis">
+        <div className="m-card"><div className="muted">Calls booked</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.booked}</div></div>
+        <div className="m-card"><div className="muted">Opportunities</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.opps}</div></div>
+        <div className="m-card"><div className="muted">Lost</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.lost}</div></div>
+        <div className="m-card"><div className="muted">Commission</div><div className="kpi-num" style={{ fontSize: 22, lineHeight: '34px' }}>{ctx.kpi.commission}</div></div>
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <div className="card-title">Campaign flow</div>
+        <div className="muted" style={{ paddingBottom: 8 }}>Tap a stage to filter the list</div>
+        {ctx.flow.nodes.map((node) => (
+          <button key={node.k} onClick={() => ctx.pickStage(node.k)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, padding: '11px 0', border: 0, borderTop: '1px solid rgba(0,0,0,0.04)', background: 'transparent', cursor: 'pointer' }} type="button">
+            <span style={{ width: 4, height: 22, borderRadius: 4, background: node.c }} />
+            <span style={{ flex: 1, textAlign: 'left', fontWeight: 600, color: node.lfg }}>{node.label}</span>
+            <span className="muted">{node.count}</span>
+          </button>
+        ))}
+      </div>
+      <div className="row" style={{ margin: '24px 0 12px' }}>
+        <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>
+        {ctx.filter ? <button className="btn" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ctx.pageRows.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="overview" />)}
+      </div>
+    </div>
+  );
+}
+
+function MobileQueue({ ctx }) {
+  return (
+    <div>
+      <div style={{ fontSize: 24, fontWeight: 600 }}>Work queue</div>
+      <div className="muted" style={{ paddingBottom: 14 }}>{ctx.queueLeads.length} leads in the queue</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ctx.queueLeads.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="queue" />)}
+      </div>
+    </div>
+  );
+}
+
+function MobileCalendar({ ctx }) {
+  return (
+    <div>
+      <div className="row">
+        <span style={{ flex: 1, fontSize: 18, fontWeight: 600 }}>{ctx.week.label}</span>
+        <button className="sq lg" onClick={() => ctx.setWeekOffset((value) => value - 1)} type="button">‹</button>
+        <button className="sq lg" onClick={() => ctx.setWeekOffset((value) => value + 1)} type="button">›</button>
+      </div>
+      <button className="btn btn-ring" onClick={() => ctx.setWeekOffset(0)} style={{ width: '100%', marginTop: 10 }} type="button">Today</button>
+      <div style={{ marginTop: 20 }}>
+        {ctx.week.days.map((day) => (
+          <div key={day.name} style={{ paddingBottom: 14 }}>
+            <div className="row" style={{ padding: '10px 0 8px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+              <span className="day-name">{day.name}</span>
+              <span style={{ fontSize: 16, fontWeight: 600 }}>{day.num}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {day.events.map((event) => (
+                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.at}</strong>
+                  <p>{event.machine}</p>
+                  <small>{event.phone}</small>
+                </button>
+              ))}
+              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div className="card-title" style={{ paddingBottom: 10 }}>Waiting for a booking</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ctx.waitLeads.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="calendar" />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileListings({ ctx }) {
+  return (
+    <div>
+      <div style={{ fontSize: 24, fontWeight: 600 }}>Scraped listings</div>
+      <div className="muted" style={{ paddingBottom: 14 }}>{ctx.listings.length} visible · queue of {ctx.summary?.eligible || 0} eligible</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ctx.listings.map((listing) => (
+          <button
+            className="m-lead"
+            key={listing.id}
+            onClick={() => {
+              const lead = ctx.leads.find((row) => row.listingId === listing.nettikone_id);
+              if (lead) ctx.openLead(lead, 'listings');
+              else if (listing.listing_url) window.open(listing.listing_url, '_blank', 'noopener');
+              ctx.setSelectedListingId(listing.id);
+            }}
+            type="button"
+          >
+            <h3>{listing.machine_title}</h3>
+            <div className="muted">{listing.nettikone_id} · {listing.location || 'No location'}</div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <span className="pill">{listingStatusLabel(listing.status)}</span>
+              <span className="muted">{listing.model_year || 'Year unknown'}</span>
+              <span className="grow" />
+              <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{listing.price_text || '-'}</span>
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>{listing.normalized_phone || '-'}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MobileLeadCard({ ctx, row, source }) {
+  return (
+    <button className="m-lead" onClick={() => ctx.openLead(row, source)} type="button">
+      <div className="row" style={{ alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+          <h3>{row.machine}</h3>
+          <div className="phone-row" style={{ marginTop: 3 }}>
+            <Glyph name="WhatsappLogoWeightFill" size={13} />
+            <span>{row.phone}</span>
+          </div>
+        </div>
+        <span className="icon-btn dark" style={{ width: 40, height: 40 }}><Glyph name="ChatTextWeightRegular" size={18} /></span>
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <span className="dot" style={{ background: statusDot(row.stage) }} />
+        <span>{row.stage}</span>
+        <span className="grow" />
+        <span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span>
+        <span className="muted">{row.ago}</span>
+      </div>
+    </button>
+  );
+}
+
+function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
+  const id = listing.nettikone_id || conversation.source_customer_id || conversation.session_id || conversation.number;
+  const booked = calendarCalls.some((call) => call.source_customer_id === listing.nettikone_id || call.number === conversation.number);
+  const stage = booked && !listing.desk_status ? 'Booked' : listingToDeskStatus(listing, conversation);
+  const last = (conversation.messages || []).at(-1);
+  const hours = listing.operating_hours ? `${String(listing.operating_hours).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} h` : '—';
+  return {
+    id,
+    listingId: listing.nettikone_id || '',
+    machine: listing.machine_title || conversation.number || 'Listing',
+    phone: conversation.number || listing.normalized_phone || '-',
+    seller: listing.seller_name || (listing.prospect_id ? `Seller ${listing.prospect_id}` : 'Seller'),
+    location: (listing.location || 'No location').split(',')[0],
+    price: listing.price_text || '-',
+    priceFlag: isSuspiciousPrice(listing.price_text, listing.price_eur),
+    year: listing.model_year || 'Year unknown',
+    hours,
+    reg: listing.registration_number || 'Ei rekisterissä',
+    notes: listing.description || 'No description stored.',
+    outbound: buildOutboundMessage(listing.machine_title),
+    url: listing.listing_url,
+    stage,
+    ago: relativeAgo(last?.at || conversation.updated_at || listing.updated_at),
+    snippet: last?.message || 'No messages yet',
+    fields: [
+      { k: 'Model year', v: listing.model_year || '-' },
+      { k: 'Hours', v: hours },
+      { k: 'Asking price', v: listing.price_text || '-' },
+      { k: 'Registration', v: listing.registration_number || 'Ei rekisterissä' },
+      { k: 'Location', v: listing.location || '-' },
+      { k: 'Seller prospect', v: listing.seller_name || listing.prospect_id || '-' },
+      { k: 'Phone', v: conversation.number || listing.normalized_phone || '-' },
+      { k: 'Nettikone ID', v: listing.nettikone_id || '-' },
+    ],
+    msgs: (conversation.messages || []).map((message) => ({
+      id: message.id,
+      who: message.sender || (message.direction === 'outbound' ? 'NordKone' : 'Seller'),
+      when: formatHelsinkiTime(message.at),
+      text: message.message,
+      out: message.direction === 'outbound',
+    })),
   };
-  const fallback = String(value || 'eligible').replace(/_/g, ' ');
-  return labels[value]?.[isFinnish ? 1 : 0] || fallback;
 }
 
-function callStatusLabel(value, isFinnish = false) {
-  const labels = {
-    booked: ['Booked', 'Soitto varattu'],
-    pending_call: ['Waiting call', 'Odottaa soittoa'],
-    pending: ['Waiting call', 'Odottaa soittoa'],
+function scrapedCount(summary) {
+  if (!summary) return 0;
+  return (
+    (summary.eligible || 0) +
+    (summary.contacted_listings || 0) +
+    (summary.interested_listings || 0) +
+    (summary.sold_listings || 0) +
+    (summary.not_interested_listings || 0) +
+    (summary.opted_out_listings || 0)
+  );
+}
+
+function countFlow(leads, summary) {
+  const counts = {
+    eligible: summary?.eligible || 0,
+    messaged: leads.length,
+    replied: 0,
+    interested: 0,
+    notint: 0,
+    review: 0,
+    won: 0,
+    lost: 0,
+    booked: 0,
+    await: 0,
   };
-  return labels[value]?.[isFinnish ? 1 : 0] || (isFinnish ? 'Odottaa soittoa' : 'Waiting call');
+  for (const lead of leads) {
+    if (lead.stage !== 'No Answer') counts.replied += 1;
+    if (['Interested', 'Callback', 'Booked', 'Deal Won', 'Deal Lost'].includes(lead.stage)) counts.interested += 1;
+    if (lead.stage === 'Not Interested' || lead.stage === 'Opted Out') counts.notint += 1;
+    if (lead.stage === 'Review') counts.review += 1;
+    if (lead.stage === 'Deal Won') counts.won += 1;
+    if (lead.stage === 'Deal Lost') counts.lost += 1;
+    if (lead.stage === 'Booked') counts.booked += 1;
+    if (lead.stage === 'Interested' || lead.stage === 'Callback') counts.await += 1;
+  }
+  return counts;
 }
 
-function buildCalendarSlots() {
-  return Array.from({ length: 11 }, (_, index) => {
-    const hour = index + 8;
-    return {
-      hour,
-      label: `${String(hour).padStart(2, '0')}:00`,
-    };
-  });
+function updateCopy(ctx, id, patch) {
+  ctx.setCopies((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
 }
 
-function sameHour(value, hour) {
-  if (!value) return false;
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    hour12: false,
-    timeZone: 'Europe/Helsinki',
-  }).formatToParts(new Date(value));
-  return Number(parts.find((part) => part.type === 'hour')?.value) === hour;
+function leadPos(ctx) {
+  const index = ctx.leads.findIndex((lead) => lead.id === ctx.selectedLead?.id);
+  return `${Math.max(index, 0) + 1} of ${ctx.leads.length}`;
 }
 
-function formatTime(value) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: '2-digit',
-    timeZone: 'Europe/Helsinki',
-  }).format(new Date(value));
+function openLeadById(ctx, id, source) {
+  const lead = ctx.leads.find((row) => row.id === id || row.listingId === id || row.phone === id);
+  if (lead) ctx.openLead(lead, source);
 }
 
-function formatCallTime(value, isFinnish = false) {
-  if (!value) return isFinnish ? 'Ei aikaa' : 'No time';
-  return new Intl.DateTimeFormat(isFinnish ? 'fi-FI' : 'en-GB', {
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-    timeZone: 'Europe/Helsinki',
-  }).format(new Date(value));
+function whatsAppHref(phone) {
+  return `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const rootEl = document.getElementById('root');
+const root = window.__nordkoneRoot || createRoot(rootEl);
+window.__nordkoneRoot = root;
+root.render(<App />);

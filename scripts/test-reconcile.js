@@ -1,4 +1,4 @@
-import { countFlow, matchesFlowFilter, reconcileLead } from '../shared/reconcile.js';
+import { countFlow, isOpenOpportunity, matchesFlowFilter, reconcileLead } from '../shared/reconcile.js';
 
 const now = Date.parse('2026-08-29T18:00:00.000Z');
 
@@ -48,6 +48,10 @@ const fixtures = [
     conversation: { status: 'replied', interest_status: 'unclear', last_inbound_at: '2026-08-28', inbound_count: 1 },
   }),
   lead({
+    listing: { nettikone_id: 'won-1', desk_status: 'Deal Won', status: 'interested' },
+    conversation: { status: 'interested', interest_status: 'interested', last_inbound_at: '2026-08-22', inbound_count: 1 },
+  }),
+  lead({
     listing: { nettikone_id: 'mixed', status: 'not_interested' },
     conversation: {
       status: 'not_interested',
@@ -64,13 +68,13 @@ const fixtures = [
 
 const counts = countFlow(fixtures, { eligible: 10 });
 const expectCounts = {
-    messaged: 8,
-    replied: 7,
+    messaged: 9,
+    replied: 8,
     noreply: 1,
     interested: 2,
     notint: 2,
   review: 1,
-  won: 0,
+  won: 1,
   lost: 1,
   booked: 1,
   await: 2,
@@ -85,6 +89,7 @@ const expectStages = {
   silent: 'No Answer',
   nope: 'Not Interested',
   review: 'Review',
+  'won-1': 'Deal Won',
   mixed: 'Not Interested',
 };
 
@@ -115,6 +120,11 @@ if (lost.length !== counts.lost || lost[0]?.id !== 'sold-1') {
 const booked = fixtures.filter((row) => matchesFlowFilter(row, 'booked'));
 if (booked.length !== 1 || booked[0].id !== 'book-1') {
   console.error('booked filter mismatch', booked.map((row) => row.id));
+  failed += 1;
+}
+const won = fixtures.find((row) => row.id === 'won-1');
+if (!won?.won || isOpenOpportunity(won) || interested.some((row) => row.id === 'won-1')) {
+  console.error('won should not count as an open opportunity', won);
   failed += 1;
 }
 

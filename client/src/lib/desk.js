@@ -19,6 +19,7 @@ export const QUEUE_KEY = 'nordkone-work-queue-v2';
 export {
   FLOW_FILTERS,
   countFlow,
+  isOpenOpportunity,
   matchesFlowFilter,
   reconcileLead,
 } from '../../../shared/reconcile.js';

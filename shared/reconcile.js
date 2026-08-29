@@ -151,13 +151,15 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   };
 }
 
+export function isOpenOpportunity(lead) {
+  return Boolean((lead.interestedSignal || lead.awaiting) && !lead.lost && !lead.booked && !lead.won);
+}
+
 export function matchesFlowFilter(lead, key) {
   if (!key || key === 'messaged') return true;
   if (key === 'replied') return Boolean(lead.replied);
   if (key === 'noreply') return Boolean(lead.noReply);
-  if (key === 'interested') {
-    return Boolean((lead.interestedSignal || lead.awaiting) && !lead.lost && !lead.booked);
-  }
+  if (key === 'interested') return isOpenOpportunity(lead);
   if (key === 'notint') return Boolean(lead.notInterestedSignal);
   if (key === 'review') return Boolean(lead.reviewSignal);
   if (key === 'won') return Boolean(lead.won);
@@ -187,7 +189,7 @@ export function countFlow(leads = [], summary = null) {
   for (const lead of leads) {
     if (lead.replied) counts.replied += 1;
     if (lead.noReply) counts.noreply += 1;
-    if ((lead.interestedSignal || lead.awaiting) && !lead.lost && !lead.booked) counts.interested += 1;
+    if (isOpenOpportunity(lead)) counts.interested += 1;
     if (lead.notInterestedSignal) counts.notint += 1;
     if (lead.reviewSignal) counts.review += 1;
     if (lead.won) counts.won += 1;

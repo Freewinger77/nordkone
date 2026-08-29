@@ -14,6 +14,7 @@ import {
   cut,
   formatEuro,
   formatHelsinkiTime,
+  isOpenOpportunity,
   isSuspiciousPrice,
   listingStatusLabel,
   loadJson,
@@ -326,21 +327,24 @@ function App() {
   const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
   const week = useMemo(() => buildWeek(weekOffset, calendarCalls), [calendarCalls, weekOffset]);
 
-  const pipelineLeads = leads.filter((lead) => lead.awaiting || lead.booked);
+  const pipelineLeads = leads.filter(isOpenOpportunity);
   const pipelineAsk = pipelineLeads.reduce((sum, lead) => sum + parseEuroAmount(lead.priceEur || lead.price), 0);
+  const pipelineCut = Math.round(pipelineAsk * 0.05);
   const replyTotal = replies.office.reduce((a, b) => a + b, 0) + replies.after.reduce((a, b) => a + b, 0);
   const afterShare = replyTotal ? Math.round((replies.after.reduce((a, b) => a + b, 0) / replyTotal) * 100) : 0;
   const kpi = {
     booked: String(flowCounts.booked || 0),
     bookedDelta: flowCounts.booked ? `${flowCounts.booked} live` : '',
     opps: String(flowCounts.interested || 0),
+    won: String(flowCounts.won || 0),
     lost: String(flowCounts.lost || 0),
     oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    wonPct: flowCounts.replied ? `${Math.round((flowCounts.won / flowCounts.replied) * 100)}% of replies` : 'of replies',
     lostPct: flowCounts.replied ? `${Math.round((flowCounts.lost / flowCounts.replied) * 100)}% of replies` : 'of replies',
-    commission: formatEuro(pipelineAsk) || '0 €',
+    commission: formatEuro(pipelineCut) || '0 €',
     commissionSub: pipelineAsk
-      ? `5% est. ${formatEuro(pipelineAsk * 0.05)} · ${pipelineLeads.length} open leads`
-      : 'No open pipeline asking prices yet',
+      ? `Assumed 5% of seller price totalling ${formatEuro(pipelineAsk)}`
+      : 'No asking prices on open opportunities yet',
   };
 
   const queueIds = queue || [];
@@ -582,38 +586,53 @@ function Overview({ ctx }) {
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
-          <div className="card-title">Calls booked</div>
-          <svg viewBox="0 0 260 90" width="100%" height="72" preserveAspectRatio="none" style={{ display: 'block', margin: '12px 0 8px' }}>
-            <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 90, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          </svg>
-          <div className="kpi-row">
-            <span className="kpi-num">{ctx.kpi.booked}</span>
-            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
-            <span className="muted">active calendar bookings</span>
+        <button className={`card card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
+          <div className="kpi-head">
+            <span className="card-title">Calls booked</span>
           </div>
+          <div className="kpi-mid">
+            <svg viewBox="0 0 260 56" width="100%" height="40" preserveAspectRatio="none">
+              <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 56, 6)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            </svg>
+          </div>
+          <div className="kpi-num">{ctx.kpi.booked}</div>
+          <div className="muted kpi-sub">{ctx.kpi.bookedDelta ? `${ctx.kpi.bookedDelta} · ` : ''}active calendar bookings</div>
         </button>
-        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
-          <div className="row">
+        <button className={`card card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
+          <div className="kpi-head">
             <span className="dot live" />
             <span className="card-title">Opportunities</span>
           </div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.opps}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.oppPct}</div>
+          <div className="kpi-mid" />
+          <div className="kpi-num">{ctx.kpi.opps}</div>
+          <div className="muted kpi-sub">{ctx.kpi.oppPct}</div>
         </button>
-        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
-          <div className="row">
+        <button className={`card card-btn rise-in ${ctx.stage === 'won' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('won')} type="button">
+          <div className="kpi-head">
+            <span className="dot" style={{ background: 'rgb(113, 221, 140)' }} />
+            <span className="card-title">Deal won</span>
+          </div>
+          <div className="kpi-mid" />
+          <div className="kpi-num">{ctx.kpi.won}</div>
+          <div className="muted kpi-sub">{ctx.kpi.wonPct}</div>
+        </button>
+        <button className={`card card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
+          <div className="kpi-head">
             <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
             <span className="card-title">Deal lost</span>
           </div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.lost}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.lostPct}</div>
+          <div className="kpi-mid" />
+          <div className="kpi-num">{ctx.kpi.lost}</div>
+          <div className="muted kpi-sub">{ctx.kpi.lostPct}</div>
         </button>
-        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
-          <div className="card-title">Pipeline</div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.commission}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.commissionSub}</div>
-          <div className="muted">Open interested, callback and booked asking prices</div>
+        <button className={`card card-btn rise-in ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
+          <div className="kpi-head">
+            <span className="card-title">Pipeline</span>
+            <span className="kpi-chip">5%</span>
+          </div>
+          <div className="kpi-mid" />
+          <div className="kpi-num">{ctx.kpi.commission}</div>
+          <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
         </button>
       </div>
 
@@ -1187,10 +1206,30 @@ function MobileOverview({ ctx }) {
   return (
     <div className="page-in">
       <div className="m-kpis">
-        <button className={`m-card card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button"><div className="muted">Calls booked</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.booked}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button"><div className="muted">Opportunities</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.opps}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button"><div className="muted">Deal lost</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.lost}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button"><div className="muted">Pipeline</div><div className="kpi-num" style={{ fontSize: 22, lineHeight: '34px' }}>{ctx.kpi.commission}</div></button>
+        <button className={`m-card card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
+          <div className="muted">Calls booked</div>
+          <div className="kpi-num">{ctx.kpi.booked}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
+          <div className="muted">Opportunities</div>
+          <div className="kpi-num">{ctx.kpi.opps}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'won' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('won')} type="button">
+          <div className="muted">Deal won</div>
+          <div className="kpi-num">{ctx.kpi.won}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
+          <div className="muted">Deal lost</div>
+          <div className="kpi-num">{ctx.kpi.lost}</div>
+        </button>
+        <button className={`m-card m-pipe card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
+          <div className="kpi-head">
+            <div className="muted">Pipeline</div>
+            <span className="kpi-chip">5%</span>
+          </div>
+          <div className="kpi-num">{ctx.kpi.commission}</div>
+          <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
+        </button>
       </div>
       <div style={{ marginTop: 20 }}>
         <div className="card-title">Campaign flow</div>
@@ -1416,6 +1455,11 @@ function OverviewSkeleton({ mobile = false }) {
               <div className="skel skel-num" />
             </div>
           ))}
+          <div className="m-card m-pipe skel-card" style={{ animationDelay: '280ms' }}>
+            <div className="skel skel-line" style={{ width: 88 }} />
+            <div className="skel skel-num" />
+            <div className="skel skel-line" style={{ width: '70%', marginTop: 8 }} />
+          </div>
         </div>
         <div className="skel-block" style={{ marginTop: 20 }}>
           <div className="skel skel-line" style={{ width: 140, marginBottom: 16 }} />
@@ -1434,10 +1478,13 @@ function OverviewSkeleton({ mobile = false }) {
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <div className="card card-wide skel-card" style={{ animationDelay: '40ms' }}><div className="skel skel-line" style={{ width: 90 }} /><div className="skel skel-chart" /><div className="skel skel-num" /></div>
-        <div className="card card-mid skel-card" style={{ animationDelay: '110ms' }}><div className="skel skel-line" style={{ width: 110 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-mid skel-card" style={{ animationDelay: '180ms' }}><div className="skel skel-line" style={{ width: 80 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-wide skel-card" style={{ animationDelay: '250ms' }}><div className="skel skel-line" style={{ width: 70 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 180, marginTop: 10 }} /></div>
+        {['90', '110', '80', '80', '70'].map((width, index) => (
+          <div className="card skel-card" key={width + index} style={{ animationDelay: `${40 + index * 70}ms` }}>
+            <div className="skel skel-line" style={{ width: Number(width) }} />
+            <div className="skel skel-num" style={{ marginTop: 28 }} />
+            <div className="skel skel-line" style={{ width: 96, marginTop: 10 }} />
+          </div>
+        ))}
       </div>
       <div className="charts">
         <div className="card flow-card skel-card" style={{ animationDelay: '280ms' }}>

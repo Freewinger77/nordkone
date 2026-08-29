@@ -14,56 +14,40 @@ const flow = buildFlow({
   await: 17,
 });
 
-const order = Object.fromEntries(flow.nodes.map((node, index) => [node.k, index]));
-const columns = {};
-for (const node of flow.nodes) {
-  (columns[node.x] ||= []).push(node.k);
+let failed = 0;
+const keys = flow.nodes.map((node) => node.k);
+const links = flow.links.map((link) => `${link.from}->${link.to}`);
+
+for (const needed of ['messaged', 'replied', 'noreply', 'interested', 'notint', 'booked', 'review', 'lost']) {
+  if (!keys.includes(needed)) {
+    console.error('missing node', needed);
+    failed += 1;
+  }
 }
 
-let failed = 0;
+for (const needed of ['messaged->replied', 'replied->interested', 'interested->booked', 'interested->review', 'booked->lost']) {
+  if (!links.includes(needed)) {
+    console.error('missing link', needed, links);
+    failed += 1;
+  }
+}
+
+if (links.some((link) => link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('replied->won'))) {
+  console.error('replied should not skip to outcomes', links);
+  failed += 1;
+}
+
 for (const link of flow.links) {
   const from = flow.nodes.find((node) => node.k === link.from);
   const to = flow.nodes.find((node) => node.k === link.to);
-  if (!from || !to) {
-    console.error('missing node', link);
-    failed += 1;
-    continue;
-  }
   if (to.x <= from.x) {
-    console.error('link goes backwards or skips left', link);
+    console.error('link is not left-to-right', link);
     failed += 1;
   }
-  const siblings = columns[to.x] || [];
-  const next = siblings[siblings.indexOf(link.from === 'messaged' ? (link.to === 'replied' ? 'replied' : 'noreply') : link.to)];
-  if (next && order[link.to] < order[link.from] && link.from !== 'messaged') {
-    console.error('target appears above source', link);
-    failed += 1;
-  }
-}
-
-const xs = [...new Set(flow.nodes.map((node) => node.x))];
-if (xs.length !== 3) {
-  console.error('expected 3 columns', xs);
-  failed += 1;
-}
-if (flow.nodes.some((node) => node.k === 'await')) {
-  console.error('await should not be a skip-column node');
-  failed += 1;
-}
-if (flow.links.some((link) => link.from === 'replied' && ['won', 'lost', 'booked', 'await'].includes(link.to) && !flow.nodes.some((node) => node.k === link.to && node.x === xs[2]))) {
-  console.error('outcome link not in last column');
-  failed += 1;
-}
-
-const repliedOut = flow.links.filter((link) => link.from === 'replied').map((link) => link.to);
-const lastCol = columns[xs[2]];
-if (repliedOut.join(',') !== lastCol.join(',')) {
-  console.error('replied outputs should match last-column order', repliedOut, lastCol);
-  failed += 1;
 }
 
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);
 }
-console.log('ok', { nodes: flow.nodes.map((node) => node.k), links: flow.links.map((link) => `${link.from}->${link.to}`) });
+console.log('ok', { nodes: keys, links });

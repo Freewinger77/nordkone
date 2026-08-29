@@ -14,14 +14,16 @@ export const ICONS = {
 
 export function WhatsAppMark({ size = 18 }) {
   return (
-    <img
-      alt=""
-      aria-hidden="true"
-      className="wa-mark"
-      height={size}
-      src="/whatsapp-mark.png"
-      width={size}
-    />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="wa-mark">
+      <path
+        fill="currentColor"
+        d="M12 2.1C6.7 2.1 2.4 6.2 2.4 11.3c0 1.8.5 3.5 1.5 5L2 22l5.9-1.5c1.4.8 3 1.2 4.6 1.2 5.3 0 9.6-4.1 9.6-9.2S17.3 2.1 12 2.1zm0 16.6c-1.4 0-2.8-.4-4-1.1l-.3-.2-3.5.9.9-3.4-.2-.3c-.9-1.4-1.4-3-1.4-4.6 0-4.1 3.5-7.4 7.9-7.4s7.9 3.3 7.9 7.4-3.5 7.4-7.9 7.4z"
+      />
+      <path
+        fill="currentColor"
+        d="M9.2 8.4c.2-.6.4-.6.8-.6h.6c.3 0 .5.1.6.5l.5 1.2c.1.3 0 .5-.2.7l-.3.3c-.1.2-.2.4 0 .6.4.7 1 1.3 1.7 1.7.2.1.5.1.6-.1l.4-.4c.2-.2.5-.2.7 0l1.1.7c.3.2.4.4.3.7v.6c0 .5-.3.8-.8 1-1.3.5-2.8.2-4.1-.7-1.3-1-2.2-2.5-2.4-4.1-.1-.5.1-1 .3-1.5z"
+      />
+    </svg>
   );
 }
 

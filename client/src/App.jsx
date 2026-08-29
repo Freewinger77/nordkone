@@ -625,24 +625,20 @@ function Overview({ ctx }) {
             <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
           </div>
           <div className="flow-wrap">
-            <svg
-              viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 320}`}
-              width="100%"
-              preserveAspectRatio="xMinYMid meet"
-              style={{ display: 'block', height: Math.min(ctx.flow.vh || 320, 340) }}
-            >
+            <svg viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 500}`} width="100%" height="300" preserveAspectRatio="xMinYMid meet" style={{ display: 'block', height: 300 }}>
               {ctx.flow.links.map((link) => (
-                <path d={link.d} fill="rgba(0,0,0,0.07)" key={`${link.from}-${link.to}`} />
+                <path d={link.d} fill="rgba(0,0,0,0.05)" key={`${link.from}-${link.to}`} />
               ))}
               {ctx.flow.nodes.map((node) => (
-                <g key={node.k} onClick={() => ctx.pickStage(node.k)} style={{ cursor: 'pointer' }}>
-                  <rect fill={node.c} height={node.h} rx="4" width={node.w} x={node.x} y={node.y} />
-                  {node.on ? <rect fill="none" height={node.h + 4} rx="6" stroke="rgb(79,80,127)" strokeWidth="2" width={node.w + 4} x={node.x - 2} y={node.y - 2} /> : null}
-                  <text fill={node.on ? 'rgb(79,80,127)' : 'rgb(0,0,0)'} fontSize="13" fontWeight="600" x={node.tx} y={node.ty - 2}>{node.label}</text>
-                  <text fill="rgba(0,0,0,0.4)" fontSize="12" x={node.tx} y={node.ty + 14}>{node.count}</text>
-                </g>
+                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="4" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
               ))}
             </svg>
+            {ctx.flow.nodes.map((node) => (
+              <div className="flow-label" key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
+                <strong style={{ color: node.lfg }}>{node.label}</strong>
+                <span>{node.count}</span>
+              </div>
+            ))}
           </div>
           <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
         </article>

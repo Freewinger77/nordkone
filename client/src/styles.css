@@ -285,8 +285,8 @@ button, input, textarea, select { font: inherit; }
 .flow-wrap { position: relative; margin-top: 16px; }
 .flow-label {
   position: absolute;
-  width: 18%;
-  min-width: 118px;
+  width: 15%;
+  min-width: 100px;
   cursor: pointer;
   transform: translateY(-50%);
 }

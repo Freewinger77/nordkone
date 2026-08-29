@@ -223,12 +223,17 @@ export function buildFlow(counts, activeStage) {
   const messaged = counts.messaged || 0;
   const replied = counts.replied || 0;
   const noreply = Math.max(messaged - replied, 0);
-  const interested = counts.interested || 0;
   const notint = counts.notint || 0;
   const review = counts.review || 0;
   const won = counts.won || 0;
   const lost = counts.lost || 0;
   const booked = counts.booked || 0;
+  const interested = Math.max(
+    (counts.interested || 0) + booked + review + won + lost,
+    replied - notint,
+    counts.interested || 0
+  );
+  const awaiting = Math.max(interested - booked - review, 0);
   const scale = Math.max(messaged, 1);
 
   const cols = [
@@ -240,11 +245,16 @@ export function buildFlow(counts, activeStage) {
     [
       { k: 'interested', label: 'Interested', v: interested, pct: pct(interested, replied), c: 'rgb(113,221,140)' },
       { k: 'notint', label: 'Not interested', v: notint, pct: pct(notint, replied), c: 'rgba(0,0,0,0.2)' },
-      { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, replied), c: 'rgb(113,221,140)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
-      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, replied), c: 'rgb(79,80,127)' },
-    ].filter((node) => node.v > 0 || node.k === 'interested'),
+    ],
+    [
+      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, interested), c: 'rgb(79,80,127)' },
+      { k: 'review', label: 'Review', v: review, pct: pct(review, interested), c: 'rgb(184,153,235)' },
+      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, interested), c: 'rgb(255,204,0)' },
+    ].filter((node) => node.v > 0 || node.k === 'booked'),
+    [
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, booked || replied), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, booked || replied), c: 'rgb(255,71,71)' },
+    ].filter((node) => node.v > 0 || node.k === 'lost'),
   ];
 
   const linksSpec = [
@@ -252,25 +262,33 @@ export function buildFlow(counts, activeStage) {
     ['messaged', 'noreply', noreply],
     ['replied', 'interested', interested],
     ['replied', 'notint', notint],
-    ['replied', 'review', review],
-    ['replied', 'won', won],
-    ['replied', 'lost', lost],
-    ['replied', 'booked', booked],
+    ['interested', 'booked', booked],
+    ['interested', 'review', review],
+    ['interested', 'await', awaiting],
+    ['booked', 'won', won],
+    ['booked', 'lost', lost],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 
-  const x = [24, 380, 736];
-  const bw = 14;
-  const top = 16;
-  const height = 280;
-  const gap = 22;
+  const x = [8, 228, 448, 668, 888];
+  const bw = 12;
+  const top = 22;
+  const height = 372;
+  const gap = 36;
   const unit = height / scale;
+  const vw = 1120;
+  const vh = 500;
+  const lmin = 58;
   const map = {};
   const nodes = [];
 
   cols.forEach((col, ci) => {
     let y = top;
+    let prevC = -999;
     col.forEach((n) => {
-      const h = Math.max(n.v * unit, n.v ? 10 : 6);
+      const h = Math.max(n.v * unit, 6);
+      let lc = y + h / 2;
+      if (lc - prevC < lmin) lc = prevC + lmin;
+      prevC = lc;
       const node = {
         k: n.k,
         x: x[ci],
@@ -280,11 +298,11 @@ export function buildFlow(counts, activeStage) {
         label: n.label,
         count: `${n.v} (${n.pct})`,
         c: n.c,
-        on: activeStage === n.k,
+        lfg: activeStage === n.k ? 'rgb(79,80,127)' : 'rgb(0,0,0)',
+        left: `${((x[ci] + bw + 12) / vw) * 100}%`,
+        top: `${(lc / vh) * 100}%`,
         outCur: y,
         inCur: y,
-        tx: x[ci] + bw + 14,
-        ty: y + h / 2,
       };
       map[n.k] = node;
       nodes.push(node);
@@ -295,15 +313,16 @@ export function buildFlow(counts, activeStage) {
   const links = linksSpec.map(([a, b, v]) => {
     const s = map[a];
     const t = map[b];
-    const h = Math.min(Math.max(v * unit, 8), s.h, t.h);
+    const remainS = Math.max(s.y + s.h - s.outCur, 6);
+    const remainT = Math.max(t.y + t.h - t.inCur, 6);
+    const h = Math.min(Math.max(v * unit, 6), remainS, remainT);
     const d = ribbon(s.x + s.w, t.x, s.outCur, t.inCur, h);
     s.outCur += h;
     t.inCur += h;
     return { d, from: a, to: b };
   });
 
-  const bottom = Math.max(...nodes.map((node) => node.y + node.h), top);
-  return { nodes, links, vw: 1120, vh: bottom + 20 };
+  return { nodes, links, vw, vh };
 }
 
 export function weekdayReplySeries(conversations = []) {

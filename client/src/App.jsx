@@ -625,20 +625,24 @@ function Overview({ ctx }) {
             <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
           </div>
           <div className="flow-wrap">
-            <svg viewBox="0 0 1120 500" width="100%" height="300" preserveAspectRatio="none" style={{ display: 'block', height: 300 }}>
+            <svg
+              viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 320}`}
+              width="100%"
+              preserveAspectRatio="xMinYMid meet"
+              style={{ display: 'block', height: Math.min(ctx.flow.vh || 320, 340) }}
+            >
               {ctx.flow.links.map((link) => (
-                <path d={link.d} fill="rgba(0,0,0,0.05)" key={link.d} />
+                <path d={link.d} fill="rgba(0,0,0,0.07)" key={`${link.from}-${link.to}`} />
               ))}
               {ctx.flow.nodes.map((node) => (
-                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="4" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
+                <g key={node.k} onClick={() => ctx.pickStage(node.k)} style={{ cursor: 'pointer' }}>
+                  <rect fill={node.c} height={node.h} rx="4" width={node.w} x={node.x} y={node.y} />
+                  {node.on ? <rect fill="none" height={node.h + 4} rx="6" stroke="rgb(79,80,127)" strokeWidth="2" width={node.w + 4} x={node.x - 2} y={node.y - 2} /> : null}
+                  <text fill={node.on ? 'rgb(79,80,127)' : 'rgb(0,0,0)'} fontSize="13" fontWeight="600" x={node.tx} y={node.ty - 2}>{node.label}</text>
+                  <text fill="rgba(0,0,0,0.4)" fontSize="12" x={node.tx} y={node.ty + 14}>{node.count}</text>
+                </g>
               ))}
             </svg>
-            {ctx.flow.nodes.map((node) => (
-              <div className="flow-label" key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
-                <strong style={{ color: node.lfg }}>{node.label}</strong>
-                <span>{node.count}</span>
-              </div>
-            ))}
           </div>
           <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
         </article>
@@ -822,14 +826,37 @@ function ListingsPage({ ctx }) {
 
 function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overview' }) {
   const rangeFrom = ctx.pool.length === 0 ? 0 : (ctx.page - 1) * ctx.pageSize + 1;
+  const [filtersOpen, setFiltersOpen] = useState(false);
   return (
     <>
       {!hideToolbar ? (
         <div className="toolbar">
-          <button className="btn btn-ring" type="button">
-            <Glyph name="FunnelSimpleWeightRegular" size={17} />
-            Filters
-          </button>
+          <div className="filter-pop">
+            <button className={`btn btn-ring ${filtersOpen || ctx.filter ? 'is-on' : ''}`} onClick={() => setFiltersOpen((open) => !open)} type="button">
+              <Glyph name="FunnelSimpleWeightRegular" size={17} />
+              Filters
+            </button>
+            {filtersOpen ? (
+              <>
+                <button className="filter-scrim" onClick={() => setFiltersOpen(false)} type="button" aria-label="Close filters" />
+                <div className="filter-menu" role="menu">
+                  <button className={`filter-item ${ctx.stage ? '' : 'on'}`} onClick={() => { ctx.pickStage(null); setFiltersOpen(false); }} type="button">
+                    All leads
+                  </button>
+                  {Object.entries(FLOW_FILTERS).map(([key, row]) => (
+                    <button
+                      className={`filter-item ${ctx.stage === key ? 'on' : ''}`}
+                      key={key}
+                      onClick={() => { ctx.pickStage(key); setFiltersOpen(false); }}
+                      type="button"
+                    >
+                      {row.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
           {ctx.filter ? (
             <button className="btn btn-soft" onClick={() => ctx.pickStage(null)} type="button">
               {`Filtered to ${ctx.filter.label}`} <span style={{ color: 'rgba(0,0,0,0.4)' }}>×</span>
@@ -1152,18 +1179,6 @@ function OutboundModal({ ctx, onClose }) {
               <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent today{ctx.remainingToday <= 0 ? ' · cap reached' : ` · ${ctx.remainingToday} left`}</div>
               <div className="bar" style={{ marginTop: 6 }}><i style={{ width: ctx.obPct }} /></div>
             </div>
-          </div>
-        </div>
-        <div style={{ height: 1, background: 'rgba(0,0,0,0.04)', margin: '24px 0' }} />
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Locked first message</div>
-          <div className="muted">WF-1 always sends this copy. Machine title replaces the listing name.</div>
-          <div className="outbound-preview" style={{ marginTop: 12 }}>{buildOutboundMessage('Hitachi ZX 225')}</div>
-        </div>
-        <div className="m-card" style={{ marginTop: 24, background: 'rgb(249,249,250)', boxShadow: 'none' }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Inbound replies stay on</div>
-          <div style={{ fontSize: 14, lineHeight: '20px', color: 'rgba(0,0,0,0.8)', marginTop: 4 }}>
-            There is no inbound switch on the previous platform either. Seller WhatsApp replies still land. This switch only pauses first outbound messages. An opt-out reply stops all further outbound to that number.
           </div>
         </div>
       </div>

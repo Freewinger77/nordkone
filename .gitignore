@@ -9,3 +9,4 @@ agent-tools/
 skills-lock.json
 n8n-workflows/
 .vercel
+.env*

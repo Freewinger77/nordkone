@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { apiGet, apiSend } from './lib/api.js';
-import { Glyph } from './lib/icons.jsx';
+import { Glyph, WhatsAppMark } from './lib/icons.jsx';
 import {
   DESK_STATUSES,
   FLOW_FILTERS,
@@ -885,7 +885,7 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             <div className="col-lead">
               <div className="machine">{cut(row.machine)}</div>
               <div className="phone-row">
-                <Glyph name="WhatsappLogoWeightFill" size={13} />
+                <WhatsAppMark size={13} />
                 <span>{row.phone}</span>
               </div>
             </div>
@@ -994,7 +994,7 @@ function LeadDrawer({ ctx }) {
           <div className="chat-col">
             <div className="row" style={{ padding: '16px 24px 10px 33px' }}>
               <span className="eyebrow" style={{ flex: 1, paddingBottom: 0 }}>Conversation</span>
-              <Glyph name="WhatsappLogoWeightFill" size={14} />
+              <WhatsAppMark size={14} />
               <span className="muted">{lead.phone}</span>
             </div>
             <div className="chat-scroll">
@@ -1071,7 +1071,7 @@ function LeadSheet({ ctx }) {
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>{lead.machine}</div>
           <div className="phone-row" style={{ marginTop: 3 }}>
-            <Glyph name="WhatsappLogoWeightFill" size={14} />
+            <WhatsAppMark size={14} />
             <span>{lead.phone}</span>
           </div>
         </div>
@@ -1140,7 +1140,7 @@ function LeadSheet({ ctx }) {
           {ctx.queue.includes(lead.id) ? 'In work queue' : 'Add to work queue'}
         </button>
         <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
-          <Glyph name="WhatsappLogoWeightFill" size={18} />
+          <WhatsAppMark size={18} />
           Open chat
         </a>
       </div>
@@ -1313,7 +1313,7 @@ function MobileLeadCard({ ctx, row, source }) {
         <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
           <h3>{row.machine}</h3>
           <div className="phone-row" style={{ marginTop: 3 }}>
-            <Glyph name="WhatsappLogoWeightFill" size={13} />
+            <WhatsAppMark size={13} />
             <span>{row.phone}</span>
           </div>
         </div>

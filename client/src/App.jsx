@@ -25,6 +25,7 @@ import {
   saveJson,
   smooth,
   statusDot,
+  statusWash,
   weekdayReplySeries,
 } from './lib/desk.js';
 import { Login } from './Login.jsx';
@@ -595,8 +596,11 @@ function Overview({ ctx }) {
               <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 56, 6)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
             </svg>
           </div>
-          <div className="kpi-num">{ctx.kpi.booked}</div>
-          <div className="muted kpi-sub">{ctx.kpi.bookedDelta ? `${ctx.kpi.bookedDelta} · ` : ''}active calendar bookings</div>
+          <div className="kpi-row">
+            <span className="kpi-num">{ctx.kpi.booked}</span>
+            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
+          </div>
+          <div className="muted kpi-sub">active calendar bookings</div>
         </button>
         <button className={`card card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
           <div className="kpi-head">
@@ -919,8 +923,8 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             <div className="col-loc"><span style={{ fontSize: 14, lineHeight: '20px' }}>{row.location}</span></div>
             <div className="col-price"><span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span></div>
             <div className={compact ? '' : 'col-act'} style={compact ? { width: 60, flexShrink: 0, textAlign: 'right' } : undefined}>
-              <div style={{ fontSize: 14, lineHeight: '20px', color: compact ? 'rgba(0,0,0,0.4)' : 'rgb(0,0,0)' }}>{row.ago}</div>
-              {!compact ? <div className="snippet">{row.snippet}</div> : null}
+              <div className={compact ? 'muted' : 'ago'}>{row.ago}</div>
+              {!compact ? <div className="snippet">{cut(row.snippet, 30)}</div> : null}
             </div>
             {!compact ? (
               <div className="col-chat">
@@ -929,9 +933,9 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
                     <Glyph name="ArrowLineRightWeightBold" size={15} />
                   </button>
                 ) : null}
-                <button className="icon-btn dark" type="button">
+                <a className="icon-btn dark" href={whatsAppHref(row.phone)} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
                   <Glyph name="ChatTextWeightRegular" size={17} />
-                </button>
+                </a>
               </div>
             ) : null}
           </div>
@@ -975,7 +979,7 @@ function LeadDrawer({ ctx }) {
           </div>
           <div className="row" style={{ flexShrink: 0 }}>
             <div className="rel">
-              <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} type="button">
+              <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ background: statusWash(lead.stage) }} type="button">
                 <span className="dot" style={{ background: statusDot(lead.stage) }} />
                 {lead.stage} ▾
               </button>
@@ -1077,11 +1081,11 @@ function LeadSheet({ ctx }) {
     <div className="sheet">
       <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
         <div className="row">
-          <button className="sq lg" onClick={ctx.closeLead} type="button">‹</button>
+          <button className="sq sheet-nav" onClick={ctx.closeLead} type="button">‹</button>
           <span className="grow" />
           <span className="muted">{leadPos(ctx)}</span>
-          <button className="sq lg" onClick={() => ctx.stepLead(-1)} type="button">↑</button>
-          <button className="sq lg" onClick={() => ctx.stepLead(1)} type="button">↓</button>
+          <button className="sq sheet-nav" onClick={() => ctx.stepLead(-1)} type="button">↑</button>
+          <button className="sq sheet-nav" onClick={() => ctx.stepLead(1)} type="button">↓</button>
         </div>
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>{lead.machine}</div>
@@ -1091,7 +1095,7 @@ function LeadSheet({ ctx }) {
           </div>
         </div>
         <div className="rel" style={{ marginTop: 12 }}>
-          <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40 }} type="button">
+          <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40, background: statusWash(lead.stage) }} type="button">
             <span className="dot" style={{ background: statusDot(lead.stage), width: 8, height: 8 }} />
             {lead.stage} ▾
           </button>
@@ -1106,9 +1110,9 @@ function LeadSheet({ ctx }) {
             </div>
           ) : null}
         </div>
-        <div className="row" style={{ marginTop: 16, padding: 4, borderRadius: 12, background: 'rgb(249,249,250)' }}>
-          <button className="btn" onClick={() => ctx.setLeadTab('chat')} style={{ flex: 1, background: ctx.leadTab === 'chat' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'chat' ? 600 : 400 }} type="button">Chat</button>
-          <button className="btn" onClick={() => ctx.setLeadTab('advert')} style={{ flex: 1, background: ctx.leadTab === 'advert' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'advert' ? 600 : 400 }} type="button">Advert</button>
+        <div className="seg">
+          <button className={ctx.leadTab === 'chat' ? 'on' : ''} onClick={() => ctx.setLeadTab('chat')} type="button">Chat</button>
+          <button className={ctx.leadTab === 'advert' ? 'on' : ''} onClick={() => ctx.setLeadTab('advert')} type="button">Advert</button>
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
@@ -1235,20 +1239,27 @@ function MobileOverview({ ctx }) {
         <div className="card-title">Campaign flow</div>
         <div className="muted" style={{ paddingBottom: 8 }}>Tap a stage to filter the list</div>
         {ctx.flow.nodes.map((node) => (
-          <button key={node.k} onClick={() => ctx.pickStage(node.k)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, padding: '11px 0', border: 0, borderTop: '1px solid rgba(0,0,0,0.04)', background: 'transparent', cursor: 'pointer' }} type="button">
-            <span style={{ width: 4, height: 22, borderRadius: 4, background: node.c }} />
-            <span style={{ flex: 1, textAlign: 'left', fontWeight: 600, color: node.lfg }}>{node.label}</span>
+          <button className="m-flow" key={node.k} onClick={() => ctx.pickStage(node.k)} type="button">
+            <span className="m-flow-bar" style={{ background: node.c }} />
+            <span className="m-flow-label">{node.label}</span>
             <span className="muted">{node.count}</span>
           </button>
         ))}
       </div>
-      <div className="row" style={{ margin: '24px 0 12px' }}>
+      <div className="row" style={{ margin: '24px 0 12px', gap: 10 }}>
         <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>
-        {ctx.filter ? <button className="btn" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+        {ctx.filter ? <button className="link-clear" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+        <span className="muted">{ctx.pool.length ? `${(ctx.page - 1) * ctx.pageSize + 1}–${Math.min(ctx.page * ctx.pageSize, ctx.pool.length)} of ${ctx.pool.length}` : '0 of 0'}</span>
       </div>
       <div id="lead-table" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.pageRows.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="overview" />)}
       </div>
+      {ctx.pageCount > 1 ? (
+        <div className="m-pager">
+          <button className="btn btn-ring" onClick={() => ctx.setPage(Math.max(1, ctx.page - 1))} type="button">Previous</button>
+          <button className="btn btn-ring" onClick={() => ctx.setPage(Math.min(ctx.pageCount, ctx.page + 1))} type="button">Next</button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1257,7 +1268,7 @@ function MobileQueue({ ctx }) {
   if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
     <div className="page-in">
-      <div style={{ fontSize: 24, fontWeight: 600 }}>Work queue</div>
+      <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Work queue</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.queueLeads.length} leads in the queue</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.queueLeads.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="queue" />)}
@@ -1310,7 +1321,7 @@ function MobileListings({ ctx }) {
   if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
     <div className="page-in">
-      <div style={{ fontSize: 24, fontWeight: 600 }}>Scraped listings</div>
+      <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Scraped listings</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.listings.length} visible · queue of {ctx.summary?.eligible || 0} eligible</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.listings.map((listing) => (
@@ -1343,25 +1354,27 @@ function MobileListings({ ctx }) {
 
 function MobileLeadCard({ ctx, row, source }) {
   return (
-    <button className="m-lead" onClick={() => ctx.openLead(row, source)} type="button">
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+    <div className="m-lead" onClick={() => ctx.openLead(row, source)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') ctx.openLead(row, source); }}>
+      <div className="m-lead-top">
+        <div className="m-lead-copy">
           <h3>{row.machine}</h3>
-          <div className="phone-row" style={{ marginTop: 3 }}>
+          <div className="phone-row">
             <WhatsAppMark size={13} />
             <span>{row.phone}</span>
           </div>
         </div>
-        <span className="icon-btn dark" style={{ width: 40, height: 40 }}><Glyph name="ChatTextWeightRegular" size={18} /></span>
+        <a className="icon-btn dark m-lead-chat" href={whatsAppHref(row.phone)} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
+          <Glyph name="ChatTextWeightRegular" size={18} />
+        </a>
       </div>
-      <div className="row" style={{ marginTop: 12 }}>
+      <div className="m-lead-foot">
         <span className="dot" style={{ background: statusDot(row.stage) }} />
-        <span>{row.stage}</span>
+        <span className="m-lead-stage">{row.stage}</span>
         <span className="grow" />
         <span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span>
-        <span className="muted">{row.ago}</span>
+        <span className="m-lead-ago">{row.ago}</span>
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -85,18 +85,28 @@ export function relativeAgo(value) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`;
+  return `${days}d`;
 }
 
 export function formatHelsinkiTime(value) {
   if (!value) return '';
-  return new Intl.DateTimeFormat('fi-FI', {
-    day: '2-digit',
-    month: '2-digit',
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
     timeZone: 'Europe/Helsinki',
-  }).format(new Date(value));
+  }).formatToParts(new Date(value));
+  const pick = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${Number(pick('day'))}.${Number(pick('month'))}. ${pick('hour')}:${pick('minute')}`;
+}
+
+export function statusWash(label) {
+  const color = STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
+  const match = String(color).match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (!match) return 'rgba(0,0,0,0.04)';
+  return `rgba(${match[1]}, ${match[2]}, ${match[3]}, 0.16)`;
 }
 
 export function formatHelsinkiClock(value) {

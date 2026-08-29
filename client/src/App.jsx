@@ -42,7 +42,10 @@ function App() {
   const [pendingCallbacks, setPendingCallbacks] = useState([]);
   const [settings, setSettings] = useState(null);
   const [control, setControl] = useState(null);
-  const [queue, setQueue] = useState(() => loadJson(QUEUE_KEY, []));
+  const [queue, setQueue] = useState(() => {
+    const stored = loadJson(QUEUE_KEY, null);
+    return Array.isArray(stored) ? stored : null;
+  });
   const [copies, setCopies] = useState(() => loadJson(COPIES_KEY, DEFAULT_COPIES));
   const [stage, setStage] = useState(null);
   const [page, setPage] = useState(1);
@@ -103,8 +106,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    saveJson(QUEUE_KEY, queue);
+    if (queue !== null) saveJson(QUEUE_KEY, queue);
   }, [queue]);
+
+  useEffect(() => {
+    if (queue !== null || !leads.length) return;
+    setQueue(
+      leads
+        .filter((lead) => ['Interested', 'Callback', 'Review'].includes(lead.stage))
+        .map((lead) => lead.id)
+    );
+  }, [leads, queue]);
 
   useEffect(() => {
     saveJson(COPIES_KEY, copies);
@@ -184,7 +196,10 @@ function App() {
 
   function toggleQueue(id, event) {
     event?.stopPropagation?.();
-    setQueue((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+    setQueue((current) => {
+      const rows = current || [];
+      return rows.includes(id) ? rows.filter((value) => value !== id) : [...rows, id];
+    });
   }
 
   async function updateSettings(next) {
@@ -282,6 +297,7 @@ function App() {
     commissionSub: bookedAsk ? `5% of ${formatEuro(bookedAsk)} combined asking price` : 'No booked asking prices yet',
   };
 
+  const queueIds = queue || [];
   const outboundOn = Boolean(settings?.outbound_enabled);
   const sentToday = control?.sent_today ?? 0;
   const dailyCap = Number(settings?.daily_cap ?? control?.daily_cap ?? 0);
@@ -291,7 +307,7 @@ function App() {
   const baseView = view === 'lead' ? from || 'overview' : view;
   const nav = [
     { id: 'overview', label: 'Overview', short: 'Overview', count: '', icon: 'ChartLineWeightRegular' },
-    { id: 'queue', label: 'Work queue', short: 'Queue', count: String(queue.length || ''), icon: 'TrayWeightRegular' },
+    { id: 'queue', label: 'Work queue', short: 'Queue', count: String(queueIds.length || ''), icon: 'TrayWeightRegular' },
     { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String(calendarCalls.length || ''), icon: 'ClockCounterClockwiseWeightRegular' },
     { id: 'listings', label: 'Listings', short: 'Listings', count: String(summary?.eligible || listings.length || ''), icon: 'NotebookWeightRegular' },
   ];
@@ -301,7 +317,7 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(pool.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const queueLeads = leads.filter((lead) => queue.includes(lead.id));
+  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
   const bookedLeads = leads.filter((lead) => lead.stage === 'Booked' || calendarCalls.some((call) => call.source_customer_id === lead.listingId));
   const waitLeads = leads.filter((lead) => lead.stage === 'Interested' || lead.stage === 'Callback');
 
@@ -333,7 +349,7 @@ function App() {
     pageRows,
     pageSize,
     pool,
-    queue,
+    queue: queueIds,
     queueLeads,
     replies,
     replyTotal,
@@ -532,7 +548,7 @@ function Overview({ ctx }) {
         <article className="card flow-card">
           <div className="wrap">
             <span className="card-title">Campaign flow</span>
-            <span className="muted" style={{ flex: 1 }}>{ctx.summary?.eligible || ctx.listings.length} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
+            <span className="muted" style={{ flex: 1 }}>{scrapedCount(ctx.summary)} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
             <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
           </div>
           <div className="flow-wrap">
@@ -1238,7 +1254,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     machine: listing.machine_title || conversation.number || 'Listing',
     phone: conversation.number || listing.normalized_phone || '-',
     seller: listing.seller_name || (listing.prospect_id ? `Seller ${listing.prospect_id}` : 'Seller'),
-    location: listing.location || 'No location',
+    location: (listing.location || 'No location').split(',')[0],
     price: listing.price_text || '-',
     priceFlag: isSuspiciousPrice(listing.price_text, listing.price_eur),
     year: listing.model_year || 'Year unknown',
@@ -1268,6 +1284,18 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
       out: message.direction === 'outbound',
     })),
   };
+}
+
+function scrapedCount(summary) {
+  if (!summary) return 0;
+  return (
+    (summary.eligible || 0) +
+    (summary.contacted_listings || 0) +
+    (summary.interested_listings || 0) +
+    (summary.sold_listings || 0) +
+    (summary.not_interested_listings || 0) +
+    (summary.opted_out_listings || 0)
+  );
 }
 
 function countFlow(leads, summary) {

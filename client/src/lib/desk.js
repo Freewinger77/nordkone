@@ -193,20 +193,16 @@ export function startOfHelsinkiWeek(offset = 0) {
 
 export function buildWeek(offset, calls = []) {
   const monday = startOfHelsinkiWeek(offset);
-  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-  const todayKey = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Helsinki',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
+  const todayKey = helsinkiDateKey(new Date());
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const weekdayCount = weekendVisible(monday, calls, todayKey) ? 7 : 5;
 
-  const days = names.map((name, index) => {
+  const days = names.slice(0, weekdayCount).map((name, index) => {
     const date = new Date(monday);
     date.setUTCDate(monday.getUTCDate() + index);
-    const key = date.toISOString().slice(0, 10);
+    const key = helsinkiDateKey(date);
     const events = calls
-      .filter((call) => call.scheduled_start && call.scheduled_start.slice(0, 10) === key)
+      .filter((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
       .map((call) => ({
         at: formatHelsinkiClock(call.scheduled_start),
         machine: call.listing?.machine_title || call.source_customer_id || call.number,
@@ -425,6 +421,27 @@ export function bookedSpark(calls = []) {
   return days.map((key) =>
     calls.filter((call) => call.scheduled_start && call.scheduled_start.slice(0, 10) === key).length
   );
+}
+
+function helsinkiDateKey(value) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Helsinki',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value));
+}
+
+function weekendVisible(monday, calls, todayKey) {
+  return [5, 6].some((offset) => {
+    const date = new Date(monday);
+    date.setUTCDate(monday.getUTCDate() + offset);
+    const key = helsinkiDateKey(date);
+    return (
+      key === todayKey ||
+      calls.some((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
+    );
+  });
 }
 
 function pct(part, whole) {

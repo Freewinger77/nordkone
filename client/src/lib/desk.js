@@ -229,12 +229,8 @@ export function buildFlow(counts, activeStage) {
   const won = counts.won || 0;
   const lost = counts.lost || 0;
   const booked = counts.booked || 0;
-  const interested = Math.max(
-    (counts.interested || 0) + booked + review + won + lost,
-    replied - notint,
-    counts.interested || 0
-  );
-  const awaiting = Math.max(interested - booked - review, 0);
+  const awaiting = counts.interested || counts.await || 0;
+  const interested = Math.max(awaiting + booked + won + lost, replied - notint - review, 0);
   const scale = Math.max(messaged, 1);
 
   const cols = [
@@ -246,39 +242,39 @@ export function buildFlow(counts, activeStage) {
     [
       { k: 'interested', label: 'Interested', v: interested, pct: pct(interested, replied), c: 'rgb(113,221,140)' },
       { k: 'notint', label: 'Not interested', v: notint, pct: pct(notint, replied), c: 'rgba(0,0,0,0.2)' },
+      { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
     ],
     [
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, interested), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, interested), c: 'rgb(255,71,71)' },
       { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, interested), c: 'rgb(79,80,127)' },
-      { k: 'review', label: 'Review', v: review, pct: pct(review, interested), c: 'rgb(184,153,235)' },
       { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, interested), c: 'rgb(255,204,0)' },
-    ].filter((node) => node.v > 0 || node.k === 'booked'),
-    [
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, booked || replied), c: 'rgb(113,221,140)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, booked || replied), c: 'rgb(255,71,71)' },
-    ].filter((node) => node.v > 0 || node.k === 'lost'),
-  ];
+    ],
+  ]
+    .map((col, index) => col.filter((node) => node.v > 0 || (index === 0 && node.k === 'messaged')))
+    .filter((col) => col.length);
 
   const linksSpec = [
     ['messaged', 'replied', replied],
     ['messaged', 'noreply', noreply],
     ['replied', 'interested', interested],
     ['replied', 'notint', notint],
+    ['replied', 'review', review],
+    ['interested', 'won', won],
+    ['interested', 'lost', lost],
     ['interested', 'booked', booked],
-    ['interested', 'review', review],
     ['interested', 'await', awaiting],
-    ['booked', 'won', won],
-    ['booked', 'lost', lost],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 
-  const x = [8, 228, 448, 668, 888];
+  const x = [16, 290, 560, 830];
   const bw = 12;
-  const top = 22;
-  const height = 372;
-  const gap = 36;
+  const top = 18;
+  const height = 360;
+  const gap = 28;
   const unit = height / scale;
   const vw = 1120;
-  const vh = 500;
-  const lmin = 58;
+  const vh = 460;
+  const lmin = 52;
   const map = {};
   const nodes = [];
 
@@ -286,7 +282,7 @@ export function buildFlow(counts, activeStage) {
     let y = top;
     let prevC = -999;
     col.forEach((n) => {
-      const h = Math.max(n.v * unit, 6);
+      const h = Math.max(n.v * unit, 8);
       let lc = y + h / 2;
       if (lc - prevC < lmin) lc = prevC + lmin;
       prevC = lc;
@@ -311,12 +307,12 @@ export function buildFlow(counts, activeStage) {
     });
   });
 
-  const links = linksSpec.map(([a, b, v]) => {
+  const links = linksSpec.filter(([a, b]) => map[a] && map[b]).map(([a, b, v]) => {
     const s = map[a];
     const t = map[b];
-    const remainS = Math.max(s.y + s.h - s.outCur, 6);
-    const remainT = Math.max(t.y + t.h - t.inCur, 6);
-    const h = Math.min(Math.max(v * unit, 6), remainS, remainT);
+    const remainS = Math.max(s.y + s.h - s.outCur, 8);
+    const remainT = Math.max(t.y + t.h - t.inCur, 8);
+    const h = Math.min(Math.max(v * unit, 8), remainS, remainT);
     const d = ribbon(s.x + s.w, t.x, s.outCur, t.inCur, h);
     s.outCur += h;
     t.inCur += h;

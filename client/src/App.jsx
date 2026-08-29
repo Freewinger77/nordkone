@@ -644,7 +644,7 @@ function Overview({ ctx }) {
             <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
           </div>
           <div className="flow-wrap">
-            <svg viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 500}`} width="100%" height="300" preserveAspectRatio="xMinYMid meet" style={{ display: 'block', height: 300 }}>
+            <svg viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 460}`} width="100%" height="320" preserveAspectRatio="xMinYMid meet" style={{ display: 'block', height: 320 }}>
               {ctx.flow.links.map((link) => (
                 <path d={link.d} fill="rgba(0,0,0,0.05)" key={`${link.from}-${link.to}`} />
               ))}

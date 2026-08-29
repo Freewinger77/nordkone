@@ -25,15 +25,38 @@ for (const needed of ['messaged', 'replied', 'noreply', 'interested', 'notint', 
   }
 }
 
-for (const needed of ['messaged->replied', 'replied->interested', 'interested->booked', 'interested->review', 'booked->lost']) {
+if (keys.includes('won')) {
+  console.error('zero Deal won should not render a node', keys);
+  failed += 1;
+}
+
+for (const needed of ['messaged->replied', 'replied->interested', 'replied->review', 'interested->booked', 'interested->lost']) {
   if (!links.includes(needed)) {
     console.error('missing link', needed, links);
     failed += 1;
   }
 }
 
-if (links.some((link) => link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('replied->won'))) {
-  console.error('replied should not skip to outcomes', links);
+if (links.some((link) => link.includes('won') || link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('booked->'))) {
+  console.error('zero or skip links should not render', links);
+  failed += 1;
+}
+
+const withWon = buildFlow({
+  eligible: 511,
+  messaged: 48,
+  replied: 35,
+  noreply: 13,
+  interested: 17,
+  notint: 11,
+  review: 1,
+  won: 3,
+  lost: 4,
+  booked: 2,
+  await: 17,
+});
+if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'interested' && link.to === 'won')) {
+  console.error('positive Deal won should render from Interested');
   failed += 1;
 }
 

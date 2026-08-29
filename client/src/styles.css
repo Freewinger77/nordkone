@@ -335,21 +335,21 @@ button, input, textarea, select { font: inherit; }
 .flow-wrap { position: relative; margin-top: 16px; }
 .flow-label {
   position: absolute;
-  width: 15%;
-  min-width: 100px;
+  width: 18%;
+  min-width: 128px;
   cursor: pointer;
   transform: translateY(-50%);
 }
 .flow-label strong {
   display: block;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 18px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.flow-label span { font-size: 11px; line-height: 15px; color: rgba(0, 0, 0, 0.4); }
+.flow-label span { font-size: 13px; line-height: 17px; color: rgba(0, 0, 0, 0.45); }
 
 .legend { display: flex; gap: 20px; margin-top: 12px; }
 .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: rgba(0, 0, 0, 0.8); }

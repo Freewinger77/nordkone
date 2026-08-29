@@ -37,6 +37,7 @@ export function listingRowToResponse(row = {}) {
     normalized_phone: row.normalized_phone,
     phone_source: row.phone_source || 'missing',
     status: row.status || 'eligible',
+    desk_status: row.raw_data?.desk_status || null,
     interest_status: listingInterestStatus(row.status),
     eligible: row.status === 'eligible',
     ineligible_reason: row.ineligible_reason,

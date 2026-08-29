@@ -1342,4 +1342,7 @@ function whatsAppHref(phone) {
   return `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const rootEl = document.getElementById('root');
+const root = window.__nordkoneRoot || createRoot(rootEl);
+window.__nordkoneRoot = root;
+root.render(<App />);

@@ -29,7 +29,7 @@ router.put('/', async (req, res) => {
   }
 
   if ('outbound_enabled' in updates) {
-    updates.outbound_enabled = Boolean(updates.outbound_enabled);
+    updates.outbound_enabled = updates.outbound_enabled === true || updates.outbound_enabled === 'true';
   }
   if ('daily_cap' in updates) {
     const cap = Number(updates.daily_cap);

@@ -213,8 +213,28 @@ function App() {
     setSaving(true);
     setError('');
     try {
-      await apiSend('/api/settings', { method: 'PUT', body: { settings: next } });
-      await load();
+      const result = await apiSend('/api/settings', { method: 'PUT', body: { settings: next } });
+      const saved = result.settings || next;
+      setSettings((current) => ({ ...(current || {}), ...saved }));
+      if (saved.daily_cap != null) setCapDraft(String(saved.daily_cap));
+      const candidateData = await apiGet('/api/outbound/candidates?limit=1').catch(() => ({ control: null }));
+      if (candidateData.control) {
+        setControl(candidateData.control);
+      } else {
+        setControl((current) => {
+          const cap = Number(saved.daily_cap ?? current?.daily_cap ?? 0);
+          const sent = current?.sent_today ?? 0;
+          const on = saved.outbound_enabled ?? current?.outbound_enabled;
+          return {
+            ...(current || {}),
+            outbound_enabled: on,
+            daily_cap: cap,
+            sent_today: sent,
+            remaining_today: on ? Math.max(cap - sent, 0) : 0,
+            reason: !on ? 'outbound_disabled' : cap - sent <= 0 ? 'daily_cap_reached' : 'ok',
+          };
+        });
+      }
     } catch (settingsError) {
       setError(settingsError.message);
     } finally {
@@ -749,8 +769,19 @@ function ListingsPage({ ctx }) {
               <div className="eyebrow">Outbound preview</div>
               <div className="outbound-preview">{buildOutboundMessage(listing.machine_title)}</div>
               {ctx.canUseControls ? (
-                <button className="btn-block" disabled={ctx.sending || !listing.normalized_phone} onClick={() => ctx.sendListing(listing)} type="button">
-                  {ctx.sending ? 'Sending...' : 'Send and open session'}
+                <button
+                  className="btn-block"
+                  disabled={ctx.sending || !listing.normalized_phone || !ctx.outboundOn || ctx.remainingToday <= 0}
+                  onClick={() => ctx.sendListing(listing)}
+                  type="button"
+                >
+                  {ctx.sending
+                    ? 'Sending...'
+                    : !ctx.outboundOn
+                      ? 'Outbound is off'
+                      : ctx.remainingToday <= 0
+                        ? 'Daily cap reached'
+                        : 'Send and open session'}
                 </button>
               ) : null}
             </div>
@@ -1071,7 +1102,7 @@ function OutboundModal({ ctx, onClose }) {
         <div className="row" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Outbound</div>
-            <div className="muted" style={{ marginTop: 2 }}>First WhatsApp message, sent automatically.</div>
+            <div className="muted" style={{ marginTop: 2 }}>Same WF-1 switch and daily cap as the previous desk.</div>
           </div>
           <button className="sq lg" onClick={onClose} type="button">×</button>
         </div>
@@ -1104,9 +1135,9 @@ function OutboundModal({ ctx, onClose }) {
           <div className="outbound-preview" style={{ marginTop: 12 }}>{buildOutboundMessage('Hitachi ZX 225')}</div>
         </div>
         <div className="m-card" style={{ marginTop: 24, background: 'rgb(249,249,250)', boxShadow: 'none' }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Consent and opt-out</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Inbound replies stay on</div>
           <div style={{ fontSize: 14, lineHeight: '20px', color: 'rgba(0,0,0,0.8)', marginTop: 4 }}>
-            Numbers come from public Nettikone listings. An opt-out reply stops all outbound to that number immediately.
+            There is no inbound switch on the previous platform either. Seller WhatsApp replies still land. This switch only pauses first outbound messages. An opt-out reply stops all further outbound to that number.
           </div>
         </div>
       </div>

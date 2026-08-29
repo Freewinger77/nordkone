@@ -15,40 +15,6 @@ export const DESK_STATUSES = [
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
 
 export const QUEUE_KEY = 'nordkone-work-queue-v2';
-export const COPIES_KEY = 'nordkone-message-copies';
-
-export const DEFAULT_COPIES = [
-  {
-    id: 'c1',
-    name: 'A1',
-    limit: '30',
-    on: true,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka! Sulla oli Nettikoneessa {kone} myynnissä. Onko se edelleen kaupan?',
-  },
-  {
-    id: 'c2',
-    name: 'A2',
-    limit: '15',
-    on: false,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka! Näin {kone} ilmoituksen Nettikoneessa. Autamme myymään koneen puolestasi – kuvaus, markkinointi ja esittely. Onko kone vielä kaupan?',
-  },
-  {
-    id: 'c3',
-    name: 'B1',
-    limit: '40',
-    on: true,
-    sent: '—',
-    reply: '—',
-    opp: '—',
-    text: 'Moikka, tässä NordKone! Sulla on {kone} myynnissä Nettikoneessa. Meillä on ostajia tälle konetyypille – onko se vielä vapaana?',
-  },
-];
 
 export {
   FLOW_FILTERS,

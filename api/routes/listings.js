@@ -481,6 +481,24 @@ router.post('/outbound/sent', async (req, res) => {
 
   const outboundMessage = message || buildOutboundMessage(listing.machine_title);
   const existingSession = await loadExistingSession(supabase, listing.nettikone_id);
+  const config = await loadCampaignConfig(supabase);
+  const dailyCap = clamp(Number(config?.daily_cap || 0), 0, 500);
+  const sentToday = await countSessions(supabase, { sentSince: startOfTodayIso() });
+
+  if (!existingSession) {
+    if (!config?.outbound_enabled) {
+      return res.status(409).json({
+        error: 'outbound_disabled',
+        message: 'Outbound is off. Turn it on in controls before sending a first message.',
+      });
+    }
+    if (sentToday >= dailyCap) {
+      return res.status(409).json({
+        error: 'daily_cap_reached',
+        message: `Daily cap of ${dailyCap} first messages has been reached.`,
+      });
+    }
+  }
 
   const sessionPayload = {
     client_key: CLIENT_KEY,

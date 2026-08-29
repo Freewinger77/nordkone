@@ -57,6 +57,8 @@ function App() {
   const [selectedListingId, setSelectedListingId] = useState(null);
   const [capDraft, setCapDraft] = useState('20');
   const [loading, setLoading] = useState(true);
+  const [booting, setBooting] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -65,7 +67,10 @@ function App() {
 
   const isDesktop = vw >= 1120;
 
-  async function load() {
+  async function load({ boot = false } = {}) {
+    const started = Date.now();
+    if (boot) setBooting(true);
+    else setRefreshing(true);
     setLoading(true);
     setError('');
     try {
@@ -89,12 +94,18 @@ function App() {
     } catch (loadError) {
       setError(loadError.message);
     } finally {
+      if (boot) {
+        const wait = Math.max(0, 680 - (Date.now() - started));
+        if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+        setBooting(false);
+      }
+      setRefreshing(false);
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    load({ boot: true });
   }, []);
 
   useEffect(() => {
@@ -336,6 +347,8 @@ function App() {
     leads,
     listings,
     loading,
+    booting,
+    refreshing,
     menuFor,
     modal,
     nav,
@@ -422,6 +435,7 @@ function DesktopDesk({ ctx }) {
           <div className="crumb">
             Lead Desk&nbsp; /&nbsp; <strong>{ctx.view === 'lead' ? ctx.selectedLead?.machine : ctx.titles[ctx.baseView]}</strong>
           </div>
+          {ctx.booting || ctx.refreshing ? <span className="boot-pulse" aria-hidden="true" /> : null}
           <div className="grow" />
           {ctx.scrapeNote ? <span className="scrape-note">{ctx.scrapeNote}</span> : null}
           {ctx.canUseControls ? (
@@ -485,21 +499,30 @@ function Sidebar({ ctx }) {
               <Glyph name={item.icon} size={18} />
             </span>
             <span className="nav-label">{item.label}</span>
-            <span className="nav-count">{item.count}</span>
+            <span className="nav-count">{ctx.booting ? <span className="skel skel-count" /> : item.count}</span>
           </button>
         ))}
       </nav>
       <div className="grow" />
-      <div className="ob-card">
+      <div className={`ob-card ${ctx.booting ? 'is-loading' : ''}`}>
         <div className="ob-head">
-          <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} />
-          <span className="ob-title">{ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</span>
+          <span className={`dot ${ctx.outboundOn && !ctx.booting ? 'live' : ''}`} />
+          <span className="ob-title">{ctx.booting ? 'Loading desk' : ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</span>
         </div>
-        <div className="bar"><i style={{ width: ctx.obPct }} /></div>
-        <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</div>
-        <div className="muted">
-          {!ctx.outboundOn ? 'WF-1 paused' : ctx.remainingToday <= 0 ? 'Daily cap reached' : `${ctx.remainingToday} left today`}
-        </div>
+        <div className="bar"><i style={{ width: ctx.booting ? '28%' : ctx.obPct }} /></div>
+        {ctx.booting ? (
+          <>
+            <div className="skel skel-line" style={{ width: '70%', marginTop: 8 }} />
+            <div className="skel skel-line" style={{ width: '48%', marginTop: 6 }} />
+          </>
+        ) : (
+          <>
+            <div className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</div>
+            <div className="muted">
+              {!ctx.outboundOn ? 'WF-1 paused' : ctx.remainingToday <= 0 ? 'Daily cap reached' : `${ctx.remainingToday} left today`}
+            </div>
+          </>
+        )}
         {ctx.canUseControls ? (
           <button className="ob-link" onClick={ctx.openModal} type="button">Open controls →</button>
         ) : null}
@@ -509,11 +532,11 @@ function Sidebar({ ctx }) {
 }
 
 function Overview({ ctx }) {
-  if (ctx.loading) return <OverviewSkeleton />;
+  if (ctx.booting) return <OverviewSkeleton />;
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <button className={`card card-wide card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
+        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
           <div className="card-title">Calls booked</div>
           <svg viewBox="0 0 260 90" width="100%" height="72" preserveAspectRatio="none" style={{ display: 'block', margin: '12px 0 8px' }}>
             <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 90, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -524,7 +547,7 @@ function Overview({ ctx }) {
             <span className="muted">active calendar bookings</span>
           </div>
         </button>
-        <button className={`card card-mid card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
+        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
           <div className="row">
             <span className="dot live" />
             <span className="card-title">Opportunities</span>
@@ -532,7 +555,7 @@ function Overview({ ctx }) {
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.opps}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.oppPct}</div>
         </button>
-        <button className={`card card-mid card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
+        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
           <div className="row">
             <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
             <span className="card-title">Deal lost</span>
@@ -540,7 +563,7 @@ function Overview({ ctx }) {
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.lost}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.lostPct}</div>
         </button>
-        <button className={`card card-wide card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
+        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
           <div className="card-title">Pipeline</div>
           <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.commission}</div>
           <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.commissionSub}</div>
@@ -549,7 +572,7 @@ function Overview({ ctx }) {
       </div>
 
       <div className="charts">
-        <article className="card flow-card">
+        <article className="card flow-card rise-in">
           <div className="wrap">
             <span className="card-title">Campaign flow</span>
             <span className="muted" style={{ flex: 1 }}>{scrapedCount(ctx.summary)} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
@@ -574,7 +597,7 @@ function Overview({ ctx }) {
           <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
         </article>
 
-        <article className="card reply-card">
+        <article className="card reply-card rise-in">
           <div className="wrap">
             <span className="card-title">Reply timing</span>
             <span className="muted">{ctx.replyTotal} replies this week</span>
@@ -600,6 +623,7 @@ function Overview({ ctx }) {
 }
 
 function WorkQueue({ ctx }) {
+  if (ctx.booting) return <QueueSkeleton />;
   return (
     <div className="scroll page-in">
       <div className="page-title">
@@ -612,6 +636,7 @@ function WorkQueue({ ctx }) {
 }
 
 function CalendarPage({ ctx }) {
+  if (ctx.booting) return <CalendarSkeleton />;
   return (
     <div className="scroll page-in" style={{ paddingTop: 24 }}>
       <div className="cal-head">
@@ -656,6 +681,7 @@ function CalendarPage({ ctx }) {
 }
 
 function ListingsPage({ ctx }) {
+  if (ctx.booting) return <ListingsSkeleton />;
   const listing = ctx.selectedListing;
   return (
     <div className="page" style={{ overflow: 'hidden' }}>
@@ -671,7 +697,7 @@ function ListingsPage({ ctx }) {
           <span className="h" style={{ width: 96 }}>Status</span>
         </div>
         {ctx.listings.map((row) => (
-          <div className={`listing-row ${listing?.id === row.id ? 'on' : ''}`} key={row.id} onClick={() => ctx.setSelectedListingId(row.id)}>
+          <div className={`listing-row ${listing?.id === row.id ? 'on' : ''}`} key={row.id} onClick={() => ctx.setSelectedListingId(row.id)} style={{ animationDelay: `${Math.min(ctx.listings.indexOf(row), 12) * 24}ms` }}>
             <div className="col-lead">
               <div className="machine">{row.machine_title}</div>
               <div className="muted">{row.nettikone_id} · {row.location || 'No location'}</div>
@@ -689,8 +715,7 @@ function ListingsPage({ ctx }) {
             </div>
           </div>
         ))}
-        {ctx.loading && !ctx.listings.length ? <div style={{ padding: '0 33px' }}><TableSkeleton /></div> : null}
-        {!ctx.listings.length && !ctx.loading ? <div className="muted" style={{ padding: '20px 33px' }}>No listings found.</div> : null}
+        {!ctx.listings.length && !ctx.booting ? <div className="muted" style={{ padding: '20px 33px' }}>No listings found.</div> : null}
       </div>
       <aside className="detail">
         {listing ? (
@@ -812,8 +837,8 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             ) : null}
           </div>
         ))}
-        {ctx.loading ? <TableSkeleton compact={compact} /> : null}
-        {!rows.length && !ctx.loading ? (
+        {ctx.booting ? <TableSkeleton compact={compact} /> : null}
+        {!rows.length && !ctx.booting ? (
           <div className="muted" style={{ padding: '16px 0' }}>
             {ctx.filter ? `No ${ctx.filter.label.toLowerCase()} leads match the campaign signals.` : 'No leads in this view.'}
           </div>
@@ -1090,7 +1115,7 @@ function OutboundModal({ ctx, onClose }) {
 }
 
 function MobileOverview({ ctx }) {
-  if (ctx.loading) return <OverviewSkeleton mobile />;
+  if (ctx.booting) return <OverviewSkeleton mobile />;
   return (
     <div className="page-in">
       <div className="m-kpis">
@@ -1122,8 +1147,9 @@ function MobileOverview({ ctx }) {
 }
 
 function MobileQueue({ ctx }) {
+  if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
-    <div>
+    <div className="page-in">
       <div style={{ fontSize: 24, fontWeight: 600 }}>Work queue</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.queueLeads.length} leads in the queue</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1134,8 +1160,9 @@ function MobileQueue({ ctx }) {
 }
 
 function MobileCalendar({ ctx }) {
+  if (ctx.booting) return <MobileCardsSkeleton title lines={5} />;
   return (
-    <div>
+    <div className="page-in">
       <div className="row">
         <span style={{ flex: 1, fontSize: 18, fontWeight: 600 }}>{ctx.week.label}</span>
         <button className="sq lg" onClick={() => ctx.setWeekOffset((value) => value - 1)} type="button">‹</button>
@@ -1173,8 +1200,9 @@ function MobileCalendar({ ctx }) {
 }
 
 function MobileListings({ ctx }) {
+  if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
-    <div>
+    <div className="page-in">
       <div style={{ fontSize: 24, fontWeight: 600 }}>Scraped listings</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.listings.length} visible · queue of {ctx.summary?.eligible || 0} eligible</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1315,7 +1343,7 @@ function OverviewSkeleton({ mobile = false }) {
       <div className="page-in">
         <div className="m-kpis">
           {Array.from({ length: 4 }, (_, index) => (
-            <div className="m-card" key={index}>
+            <div className="m-card skel-card" key={index} style={{ animationDelay: `${index * 70}ms` }}>
               <div className="skel skel-line" style={{ width: 72 }} />
               <div className="skel skel-num" />
             </div>
@@ -1324,7 +1352,7 @@ function OverviewSkeleton({ mobile = false }) {
         <div className="skel-block" style={{ marginTop: 20 }}>
           <div className="skel skel-line" style={{ width: 140, marginBottom: 16 }} />
           {Array.from({ length: 6 }, (_, index) => (
-            <div className="skel-row" key={index}>
+            <div className="skel-row" key={index} style={{ animationDelay: `${180 + index * 50}ms` }}>
               <div className="skel" style={{ width: 4, height: 22, borderRadius: 4 }} />
               <div className="skel skel-line" style={{ flex: 1 }} />
               <div className="skel skel-line" style={{ width: 48 }} />
@@ -1338,22 +1366,97 @@ function OverviewSkeleton({ mobile = false }) {
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <div className="card card-wide skel-card"><div className="skel skel-line" style={{ width: 90 }} /><div className="skel skel-chart" /><div className="skel skel-num" /></div>
-        <div className="card card-mid skel-card"><div className="skel skel-line" style={{ width: 110 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-mid skel-card"><div className="skel skel-line" style={{ width: 80 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-wide skel-card"><div className="skel skel-line" style={{ width: 70 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 180, marginTop: 10 }} /></div>
+        <div className="card card-wide skel-card" style={{ animationDelay: '40ms' }}><div className="skel skel-line" style={{ width: 90 }} /><div className="skel skel-chart" /><div className="skel skel-num" /></div>
+        <div className="card card-mid skel-card" style={{ animationDelay: '110ms' }}><div className="skel skel-line" style={{ width: 110 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
+        <div className="card card-mid skel-card" style={{ animationDelay: '180ms' }}><div className="skel skel-line" style={{ width: 80 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
+        <div className="card card-wide skel-card" style={{ animationDelay: '250ms' }}><div className="skel skel-line" style={{ width: 70 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 180, marginTop: 10 }} /></div>
       </div>
       <div className="charts">
-        <div className="card flow-card skel-card">
+        <div className="card flow-card skel-card" style={{ animationDelay: '280ms' }}>
           <div className="skel skel-line" style={{ width: 140 }} />
           <div className="skel skel-flow" />
         </div>
-        <div className="card reply-card skel-card">
+        <div className="card reply-card skel-card" style={{ animationDelay: '340ms' }}>
           <div className="skel skel-line" style={{ width: 110 }} />
           <div className="skel skel-chart" style={{ height: 140, marginTop: 18 }} />
         </div>
       </div>
       <TableSkeleton />
+    </div>
+  );
+}
+
+function QueueSkeleton() {
+  return (
+    <div className="scroll page-in">
+      <div className="page-title">
+        <div className="skel skel-line" style={{ width: 160, height: 28 }} />
+        <div className="skel skel-line" style={{ width: 220 }} />
+      </div>
+      <TableSkeleton />
+    </div>
+  );
+}
+
+function CalendarSkeleton() {
+  return (
+    <div className="scroll page-in" style={{ paddingTop: 24 }}>
+      <div className="cal-head">
+        <div className="skel skel-line" style={{ width: 180, height: 28 }} />
+        <div className="skel skel-line" style={{ width: 90, marginLeft: 12 }} />
+      </div>
+      <div className="week-grid">
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, index) => (
+          <div className="day-col" key={day} style={{ animationDelay: `${index * 60}ms` }}>
+            <div className="day-head">
+              <div className="skel skel-line" style={{ width: 28 }} />
+              <div className="skel skel-line" style={{ width: 22, marginTop: 8 }} />
+            </div>
+            <div className="day-body">
+              <div className="skel" style={{ height: index === 1 || index === 3 ? 64 : 36, borderRadius: 12 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <TableSkeleton compact />
+    </div>
+  );
+}
+
+function ListingsSkeleton() {
+  return (
+    <div className="page page-in" style={{ overflow: 'hidden' }}>
+      <div className="listings-pane">
+        <div className="list-head">
+          <div className="skel skel-line" style={{ width: 170, height: 24 }} />
+        </div>
+        <TableSkeleton />
+      </div>
+      <aside className="detail">
+        <div className="skel skel-line" style={{ width: 80 }} />
+        <div className="skel skel-line" style={{ width: '70%', height: 24, marginTop: 16 }} />
+        <div className="skel" style={{ height: 180, borderRadius: 16, marginTop: 16 }} />
+        <div className="skel skel-line" style={{ width: '90%', marginTop: 20 }} />
+        <div className="skel skel-line" style={{ width: '60%', marginTop: 10 }} />
+        <div className="skel skel-line" style={{ width: '75%', marginTop: 10 }} />
+      </aside>
+    </div>
+  );
+}
+
+function MobileCardsSkeleton({ title = false, lines = 5 }) {
+  return (
+    <div className="page-in">
+      {title ? <div className="skel skel-line" style={{ width: 150, height: 24, marginBottom: 16 }} /> : null}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {Array.from({ length: lines }, (_, index) => (
+          <div className="m-card skel-card" key={index} style={{ animationDelay: `${index * 60}ms` }}>
+            <div className="skel skel-line" style={{ width: '62%' }} />
+            <div className="skel skel-line" style={{ width: '38%', marginTop: 10 }} />
+            <div className="skel skel-line" style={{ width: '48%', marginTop: 14 }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -145,6 +145,12 @@ if (vMessaged.h >= vMessaged.w || vReplied.x < vMessaged.x - 1) {
   console.error('vertical nodes should be wide bars', vMessaged, vReplied);
   failed += 1;
 }
+const vReview = vFlow.nodes.find((node) => node.k === 'review');
+const vAwait = vFlow.nodes.find((node) => node.k === 'awaitReply');
+if (vAwait.x - vReview.x < 70) {
+  console.error('crowded vertical labels need more slot room', { review: vReview.x, await: vAwait.x });
+  failed += 1;
+}
 if (vFlow.links.some((link) => {
   const from = vFlow.nodes.find((node) => node.k === link.from);
   const to = vFlow.nodes.find((node) => node.k === link.to);

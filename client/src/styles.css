@@ -376,7 +376,13 @@ button {
 .flow-label span { font-size: 12px; line-height: 16px; color: rgba(0, 0, 0, 0.45); white-space: nowrap; }
 .flow-label.is-on strong { color: rgb(0, 0, 0); }
 
-.v-flow-card { margin-top: 20px; }
+.v-flow-card {
+  margin-top: 20px;
+  padding: 14px 10px 8px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  background: rgb(255, 255, 255);
+}
 .v-flow-svg {
   display: block;
   width: 100%;

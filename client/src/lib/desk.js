@@ -387,10 +387,10 @@ export function buildVerticalFlow(counts, activeStage) {
   const vw = 390;
   const pad = 8;
   const inner = vw - pad * 2;
-  const bh = 14;
-  const labelBand = 40;
-  const ribbonBand = 46;
-  const top = 6;
+  const bh = 16;
+  const labelBand = 46;
+  const ribbonBand = 50;
+  const top = 8;
   const gap = 8;
   const unit = inner / scale;
   const map = {};
@@ -398,14 +398,18 @@ export function buildVerticalFlow(counts, activeStage) {
 
   cols.forEach((col, ri) => {
     const y = top + ri * (bh + labelBand + ribbonBand);
+    const crowded = col.length >= 3;
+    const slot = crowded ? inner / col.length : 0;
     const raw = col.map((n) => Math.max(n.v * unit, 16));
     const used = raw.reduce((sum, w) => sum + w, 0) + gap * Math.max(col.length - 1, 0);
     const extra = Math.max(inner - used, 0);
     const rawSum = raw.reduce((sum, w) => sum + w, 0) || 1;
-    const widths = raw.map((w) => w + extra * (w / rawSum));
-    let x = pad;
+    const widths = crowded
+      ? col.map((n) => Math.min(Math.max(n.v * unit, 16), Math.max(slot - 8, 16)))
+      : raw.map((w) => w + extra * (w / rawSum));
     col.forEach((n, ni) => {
       const w = widths[ni];
+      const x = crowded ? pad + ni * slot : pad + widths.slice(0, ni).reduce((sum, width) => sum + width + gap, 0);
       const node = {
         k: n.k,
         x,
@@ -417,13 +421,12 @@ export function buildVerticalFlow(counts, activeStage) {
         c: n.c,
         lfg: 'rgb(0,0,0)',
         left: `${(x / vw) * 100}%`,
-        labelMax: `${Math.max(w, 72)}px`,
+        labelMax: `${Math.max(crowded ? slot - 6 : w, 72)}px`,
         outCur: x,
         inCur: x,
       };
       map[n.k] = node;
       nodes.push(node);
-      x += w + gap;
     });
   });
 

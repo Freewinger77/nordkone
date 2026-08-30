@@ -268,6 +268,22 @@ if (deepCallback.stage !== 'Callback' || !deepCallback.callback) {
   failed += 1;
 }
 
+const prunedCallback = lead({
+  listing: { nettikone_id: 'pruned-callback', desk_status: 'Replied' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    desk_status: 'Replied',
+    last_inbound_at: '2026-07-21',
+    inbound_count: 4,
+    messages: thread(9),
+  },
+});
+if (prunedCallback.stage !== 'Replied' || prunedCallback.callback) {
+  console.error('persisted Replied should drop a stale callback', prunedCallback);
+  failed += 1;
+}
+
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);

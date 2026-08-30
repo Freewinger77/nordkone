@@ -877,6 +877,7 @@ function deskStatusToListingStatus(deskStatus) {
     'Not Interested': 'not_interested',
     'Opted Out': 'opted_out',
     Review: 'needs_human',
+    Replied: 'replied',
     Eligible: 'eligible',
     Contacted: 'contacted',
   };

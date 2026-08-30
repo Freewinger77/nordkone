@@ -8,9 +8,10 @@ const DESK_LABELS = new Set([
   'Not Interested',
   'Opted Out',
   'Review',
+  'Replied',
 ]);
 
-const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Interested']);
+const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Interested', 'Replied']);
 const THIN_DESK_LABELS = new Set(['Callback', 'Interested']);
 
 const STALE_BOOKING_MS = 14 * 24 * 60 * 60 * 1000;

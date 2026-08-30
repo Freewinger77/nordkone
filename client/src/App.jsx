@@ -326,7 +326,10 @@ function App() {
   const flow = useMemo(() => buildFlow(flowCounts, stage), [flowCounts, stage]);
   const replies = useMemo(() => weekdayReplySeries(conversations), [conversations]);
   const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
-  const week = useMemo(() => buildWeek(weekOffset, calendarCalls), [calendarCalls, weekOffset]);
+  const week = useMemo(
+    () => buildWeek(weekOffset, calendarCalls, leads.filter((lead) => lead.callback && !lead.booked)),
+    [calendarCalls, leads, weekOffset]
+  );
 
   const pipelineLeads = leads.filter(isOpenOpportunity);
   const pipelineAsk = pipelineLeads.reduce((sum, lead) => sum + parseEuroAmount(lead.priceEur || lead.price), 0);
@@ -354,12 +357,14 @@ function App() {
   const dailyCap = Number(settings?.daily_cap ?? control?.daily_cap ?? 0);
   const obPct = `${Math.min(100, Math.round((sentToday / Math.max(dailyCap, 1)) * 100))}%`;
 
+  const bookedLeads = leads.filter((lead) => lead.booked);
+  const waitLeads = leads.filter((lead) => lead.callback || lead.awaiting);
   const titles = { overview: 'Overview', queue: 'Work queue', calendar: 'Calendar', listings: 'Listings' };
   const baseView = view === 'lead' ? from || 'overview' : view;
   const nav = [
     { id: 'overview', label: 'Overview', short: 'Overview', count: '', icon: 'ChartLineWeightRegular' },
     { id: 'queue', label: 'Work queue', short: 'Queue', count: String(queueIds.length || ''), icon: 'TrayWeightRegular' },
-    { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String(calendarCalls.length || ''), icon: 'ClockCounterClockwiseWeightRegular' },
+    { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String((calendarCalls.length || 0) + waitLeads.length), icon: 'ClockCounterClockwiseWeightRegular' },
     { id: 'listings', label: 'Listings', short: 'Listings', count: String(summary?.eligible || listings.length || ''), icon: 'NotebookWeightRegular' },
   ];
 
@@ -369,8 +374,6 @@ function App() {
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
   const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
-  const bookedLeads = leads.filter((lead) => lead.booked);
-  const waitLeads = leads.filter((lead) => lead.callback || lead.awaiting);
 
   const ctx = {
     advOpen,
@@ -719,10 +722,10 @@ function CalendarPage({ ctx }) {
             </div>
             <div className="day-body">
               {day.events.map((event) => (
-                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.at}</strong>
+                <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.kind === 'callback' ? 'Callback' : event.at}</strong>
                   <p>{event.machine}</p>
-                  <small>{event.phone}</small>
+                  <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
               {!day.events.length ? <span className="empty-soft">No calls</span> : null}
@@ -1293,10 +1296,10 @@ function MobileCalendar({ ctx }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {day.events.map((event) => (
-                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.at}</strong>
+                <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.kind === 'callback' ? 'Callback' : event.at}</strong>
                   <p>{event.machine}</p>
-                  <small>{event.phone}</small>
+                  <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
               {!day.events.length ? <span className="empty-soft">No calls</span> : null}
@@ -1409,6 +1412,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     awaiting: reconciled.awaiting,
     thinReply: reconciled.thinReply,
     opportunity: reconciled.opportunity,
+    callbackAt: conversation.last_inbound_at || last?.at || null,
     ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',
     fields: [

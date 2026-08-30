@@ -138,24 +138,37 @@ export function startOfHelsinkiWeek(offset = 0) {
   return monday;
 }
 
-export function buildWeek(offset, calls = []) {
+export function buildWeek(offset, calls = [], callbacks = []) {
   const monday = startOfHelsinkiWeek(offset);
   const todayKey = helsinkiDateKey(new Date());
   const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weekdayCount = weekendVisible(monday, calls, todayKey) ? 7 : 5;
+  const weekdayCount = weekendVisible(monday, calls, todayKey, callbacks) ? 7 : 5;
 
   const days = names.slice(0, weekdayCount).map((name, index) => {
     const date = new Date(monday);
     date.setUTCDate(monday.getUTCDate() + index);
     const key = helsinkiDateKey(date);
-    const events = calls
+    const booked = calls
       .filter((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
       .map((call) => ({
+        kind: 'booked',
         at: formatHelsinkiClock(call.scheduled_start),
         machine: call.listing?.machine_title || call.source_customer_id || call.number,
         phone: call.callback_number || call.number,
         leadId: call.source_customer_id || call.number,
+        sort: Date.parse(call.scheduled_start) || 0,
       }));
+    const pending = callbacks
+      .filter((lead) => lead.callbackAt && helsinkiDateKey(lead.callbackAt) === key)
+      .map((lead) => ({
+        kind: 'callback',
+        at: formatHelsinkiClock(lead.callbackAt),
+        machine: lead.machine,
+        phone: lead.phone,
+        leadId: lead.listingId || lead.id,
+        sort: Date.parse(lead.callbackAt) || 0,
+      }));
+    const events = [...booked, ...pending].sort((a, b) => a.sort - b.sort || (a.kind === 'booked' ? -1 : 1));
     return {
       name,
       num: String(date.getUTCDate()),
@@ -176,10 +189,14 @@ export function buildWeek(offset, calls = []) {
       ? `${first.num} – ${last.num} ${startMonth}`
       : `${first.num} ${startMonth} – ${last.num} ${endMonth}`;
 
-  const count = days.reduce((sum, day) => sum + day.events.length, 0);
+  const bookedCount = days.reduce((sum, day) => sum + day.events.filter((event) => event.kind === 'booked').length, 0);
+  const callbackCount = days.reduce((sum, day) => sum + day.events.filter((event) => event.kind === 'callback').length, 0);
+  const parts = [];
+  if (bookedCount) parts.push(bookedCount === 1 ? '1 booked' : `${bookedCount} booked`);
+  if (callbackCount) parts.push(callbackCount === 1 ? '1 callback' : `${callbackCount} callbacks`);
   return {
     label,
-    count: count === 0 ? 'No calls booked' : count === 1 ? '1 call booked' : `${count} calls booked`,
+    count: parts.join(' · ') || 'No calls this week',
     days,
   };
 }
@@ -394,14 +411,15 @@ function helsinkiDateKey(value) {
   }).format(new Date(value));
 }
 
-function weekendVisible(monday, calls, todayKey) {
+function weekendVisible(monday, calls, todayKey, callbacks = []) {
   return [5, 6].some((offset) => {
     const date = new Date(monday);
     date.setUTCDate(monday.getUTCDate() + offset);
     const key = helsinkiDateKey(date);
     return (
       key === todayKey ||
-      calls.some((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
+      calls.some((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key) ||
+      callbacks.some((lead) => lead.callbackAt && helsinkiDateKey(lead.callbackAt) === key)
     );
   });
 }

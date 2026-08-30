@@ -1,4 +1,4 @@
-import { buildFlow } from '../client/src/lib/desk.js';
+import { buildFlow, buildWeek } from '../client/src/lib/desk.js';
 
 const flow = buildFlow({
   eligible: 511,
@@ -101,6 +101,18 @@ for (const link of flow.links) {
     console.error('link is not left-to-right', link);
     failed += 1;
   }
+}
+
+const week = buildWeek(0, [], [
+  { callbackAt: new Date().toISOString(), machine: 'Lokomo T325C', phone: '+358', listingId: 'lokomo', callback: true },
+]);
+if (!week.days.some((day) => day.events.some((event) => event.kind === 'callback' && event.machine === 'Lokomo T325C'))) {
+  console.error('callback signal should land on its Helsinki day', week);
+  failed += 1;
+}
+if (week.days.flatMap((day) => day.events).some((event) => event.kind === 'booked') === false && !week.count.includes('callback')) {
+  console.error('week label should mention callbacks', week.count);
+  failed += 1;
 }
 
 if (failed) {

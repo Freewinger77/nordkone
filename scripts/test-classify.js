@@ -1,4 +1,4 @@
-import { classifyInbound, isNeedsReviewReply } from '../shared/intent.js';
+import { classifyInbound, isNeedsReviewReply, normalizeInboundClassification } from '../shared/intent.js';
 
 let failed = 0;
 
@@ -10,7 +10,7 @@ function expect(name, actual, wanted) {
 }
 
 const emailAsk = classifyInbound('Ei käy. Laita kirjallisena sähköpostiin kiitos.');
-expect('email ask class', emailAsk.classification, 'unclear');
+expect('email ask class', emailAsk.classification, 'needs_review');
 expect('email ask human', emailAsk.needs_human, true);
 expect('email ask review', isNeedsReviewReply('Ei käy. Laita kirjallisena sähköpostiin kiitos.'), true);
 
@@ -22,8 +22,13 @@ expect('hard no class', hardNo.classification, 'not_interested');
 expect('hard no review', isNeedsReviewReply('Ei kiinnosta'), false);
 
 const eiKay = classifyInbound('Ei käy');
-expect('ei kay class', eiKay.classification, 'unclear');
+expect('ei kay class', eiKay.classification, 'needs_review');
 expect('ei kay review', isNeedsReviewReply('Ei käy'), true);
+
+for (const label of ['ready_for_call', 'booked', 'machine_available', 'needs_review', 'interested']) {
+  expect(`accept ${label}`, normalizeInboundClassification(label), label);
+}
+expect('drop garbage', normalizeInboundClassification('call_now'), null);
 
 if (failed) {
   console.error(`FAILED ${failed}`);

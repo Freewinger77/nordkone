@@ -243,7 +243,6 @@ const thinReply = lead({
   conversation: {
     status: 'interested',
     interest_status: 'interested',
-    derived_status: 'ready_for_call',
     last_inbound_at: '2026-08-29',
     inbound_count: 1,
     messages: thread(3),
@@ -344,6 +343,84 @@ const hardNo = lead({
 });
 if (hardNo.stage !== 'Not Interested') {
   console.error('hard no should stay Not Interested', hardNo);
+  failed += 1;
+}
+
+const readyForCall = lead({
+  listing: { nettikone_id: 'ht-10' },
+  conversation: {
+    status: 'ready_for_call',
+    interest_status: 'ready_for_call',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 2,
+    messages: [
+      { direction: 'inbound', classification: 'interested', message: 'Paljonko provisio on?' },
+      { direction: 'inbound', classification: 'ready_for_call', message: 'Milloin vain' },
+    ],
+  },
+});
+if (readyForCall.stage !== 'Callback') {
+  console.error('ready_for_call should be Call Now even on a short thread', readyForCall);
+  failed += 1;
+}
+
+const machineOnly = lead({
+  listing: { nettikone_id: 'still-for-sale' },
+  conversation: {
+    status: 'replied',
+    interest_status: 'machine_available',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    messages: [{ direction: 'inbound', classification: 'machine_available', message: 'On kaupan. Ilmoituskin on nettikoneessa.' }],
+  },
+});
+if (machineOnly.stage !== 'Replied' || machineOnly.callback) {
+  console.error('machine_available should stay Replied, not Call Now', machineOnly);
+  failed += 1;
+}
+
+const n8nReview = lead({
+  listing: { nettikone_id: 'kersantti' },
+  conversation: {
+    status: 'needs_human',
+    interest_status: 'needs_review',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    messages: [{ direction: 'inbound', classification: 'needs_review', message: 'Pidetään mielessä' }],
+  },
+});
+if (n8nReview.stage !== 'Review') {
+  console.error('needs_review should land as Review', n8nReview);
+  failed += 1;
+}
+
+const n8nBooked = lead({
+  listing: { nettikone_id: 'vantaa-2026' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'booked',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 2,
+    messages: [{ direction: 'inbound', classification: 'booked', message: 'Klo 13:15' }],
+  },
+});
+if (n8nBooked.stage !== 'Booked') {
+  console.error('booked classification should land as Booked', n8nBooked);
+  failed += 1;
+}
+
+const commissionAsk = lead({
+  listing: { nettikone_id: 'hi-tec' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    messages: [{ direction: 'inbound', classification: 'interested', message: 'Mikä on teidän välityspalkkio?' }],
+  },
+});
+if (commissionAsk.stage !== 'Replied' || commissionAsk.reviewSignal) {
+  console.error('commission ask should stay interested/Replied, not Review', commissionAsk);
   failed += 1;
 }
 

@@ -261,7 +261,7 @@ router.get('/calendar-calls', async (req, res) => {
     .from('campaign_inbound_events')
     .select('*')
     .eq('client_key', CLIENT_KEY)
-    .in('classification', ['interested', 'needs_human'])
+    .in('classification', ['interested', 'needs_human', 'ready_for_call', 'booked'])
     .order('received_at', { ascending: false })
     .limit(limit * 3);
 
@@ -795,7 +795,13 @@ function extractCalendarMetadata(event = {}, session = {}) {
     rawSession.calendar ||
     rawSession.calendar_booking ||
     rawSession.calendarBooking ||
-    null;
+    (rawEvent.classification === 'booked' && (rawEvent.call_start || rawEvent.start || rawEvent.event_id)
+      ? {
+          start: rawEvent.call_start || rawEvent.start,
+          event_id: rawEvent.event_id || rawEvent.calendar_event_id,
+          status: 'booked',
+        }
+      : null);
 
   if (!candidate) return null;
 
@@ -991,6 +997,12 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
 
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';
+  if (interest === 'booked' || latest.classification === 'booked') return 'booked';
+  if (interest === 'ready_for_call' || sessionStatus === 'ready_for_call' || latest.classification === 'ready_for_call') {
+    return 'ready_for_call';
+  }
+  if (interest === 'needs_review' || latest.classification === 'needs_review') return 'needs_review';
+  if (interest === 'machine_available' || latest.classification === 'machine_available') return 'machine_available';
   if (
     !reviewReply &&
     (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested')

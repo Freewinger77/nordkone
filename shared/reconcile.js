@@ -144,9 +144,12 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
       sessionStatus === 'interested' ||
       interest === 'interested' ||
       derived === 'interested' ||
-      derived === 'machine_available' ||
       classified === 'interested');
-  const callbackSignal = derived === 'ready_for_call' || classified === 'needs_human';
+  const callbackSignal =
+    derived === 'ready_for_call' ||
+    classified === 'ready_for_call' ||
+    interest === 'ready_for_call' ||
+    sessionStatus === 'ready_for_call';
   const deep = isDeepConversation(conversation);
   const callbackIntent = interestedSignal || callbackSignal;
 
@@ -163,10 +166,11 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
   else if (notInterested) stage = 'Not Interested';
-  else if (bookedSignal) stage = 'Booked';
-  else if (reviewReply) stage = 'Review';
+  else if (bookedSignal || classified === 'booked') stage = 'Booked';
+  else if (callbackSignal) stage = 'Callback';
+  else if (reviewReply || classified === 'needs_review' || derived === 'needs_review') stage = 'Review';
   else if (inbound && deep && callbackIntent) stage = 'Callback';
-  else if (inbound && (classified === 'unclear' || derived === 'needs_review') && !interestedSignal) stage = 'Review';
+  else if (inbound && (classified === 'unclear' || classified === 'needs_human') && !interestedSignal) stage = 'Review';
   else if (inbound) stage = 'Replied';
   else stage = 'No Answer';
 

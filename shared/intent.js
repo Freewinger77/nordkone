@@ -31,7 +31,7 @@ export function classifyInbound(message = '') {
   }
 
   if (isNeedsReviewReply(text)) {
-    return { classification: 'unclear', needs_human: true };
+    return { classification: 'needs_review', needs_human: true };
   }
 
   if (HARD_NOT_INTERESTED_RE.test(text)) {
@@ -39,8 +39,53 @@ export function classifyInbound(message = '') {
   }
 
   if (INTERESTED_RE.test(text)) {
-    return { classification: 'interested', needs_human: true };
+    return { classification: 'interested', needs_human: false };
   }
 
   return { classification: 'unclear', needs_human: true };
+}
+
+export const INBOUND_CLASSIFICATIONS = new Set([
+  'interested',
+  'sold',
+  'not_interested',
+  'unclear',
+  'needs_human',
+  'opted_out',
+  'machine_available',
+  'ready_for_call',
+  'booked',
+  'needs_review',
+]);
+
+export function normalizeInboundClassification(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return INBOUND_CLASSIFICATIONS.has(normalized) ? normalized : null;
+}
+
+export function listingStatusFromClass(classification) {
+  const map = {
+    unclear: 'replied',
+    machine_available: 'replied',
+    ready_for_call: 'interested',
+    booked: 'interested',
+    needs_review: 'needs_human',
+    needs_human: 'needs_human',
+    interested: 'interested',
+    sold: 'sold',
+    not_interested: 'not_interested',
+    opted_out: 'opted_out',
+  };
+  return map[classification] || 'replied';
+}
+
+export function sessionStatusFromClass(classification) {
+  if (classification === 'unclear' || classification === 'machine_available') return 'replied';
+  if (classification === 'needs_review') return 'needs_human';
+  if (classification === 'booked') return 'interested';
+  return classification;
+}
+
+export function shouldForceNeedsHuman(classification) {
+  return classification === 'needs_review' || classification === 'needs_human' || classification === 'unclear';
 }

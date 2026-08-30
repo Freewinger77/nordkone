@@ -3,7 +3,7 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
-import { isNeedsReviewReply } from '../../shared/intent.js';
+import { isNeedsReviewReply, normalizeInboundClassification } from '../../shared/intent.js';
 
 const router = Router();
 
@@ -320,7 +320,9 @@ router.get('/calendar-calls', async (req, res) => {
       callback_number: extractCallbackNumber(event) || event.number,
       latest_message: event.message,
       reply_message: event.raw_event?.reply_message || event.raw_event?.agent_reply_message || null,
-      classification: event.classification,
+      classification:
+        normalizeInboundClassification(event.raw_event?.classification || event.raw_event?.lead_status) ||
+        event.classification,
       needs_human: event.needs_human,
       listing,
     };
@@ -765,7 +767,9 @@ function buildConversationMessages(session = {}, inboundEvents = []) {
       sender: 'Seller',
       message: event.message,
       at: event.received_at || event.created_at,
-      classification: event.classification,
+      classification:
+        normalizeInboundClassification(event.raw_event?.classification || event.raw_event?.lead_status) ||
+        event.classification,
       needs_human: event.needs_human,
     });
 
@@ -1012,7 +1016,7 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   if (isActiveBooking(booking)) return 'booked';
   if (reviewReply) return 'needs_review';
   if (listingStatus === 'interested' || sessionStatus === 'interested' || interest === 'interested') {
-    if (isReadyForCallText(latestText)) return 'ready_for_call';
+    if (isReadyForCallText(latestInbound)) return 'ready_for_call';
     return 'interested';
   }
   if (!session && listingStatus === 'eligible') return 'ready_to_contact';
@@ -1029,7 +1033,7 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse']) || events.some((event) => event.classification === 'not_interested')) {
     return 'not_interested';
   }
-  if (isReadyForCallText(latestText)) return 'ready_for_call';
+  if (isReadyForCallText(latestInbound)) return 'ready_for_call';
   if (isCommercialInterestText(fullText)) return 'interested';
   if (isMachineAvailableText(fullText)) return 'machine_available';
   if (events.some((event) => event.classification === 'needs_human')) return 'needs_review';
@@ -1058,9 +1062,8 @@ function isReadyForCallText(value = '') {
     'sopii',
     'käy hyvin',
     'milloin vain',
+    'milloin tahansa',
     'tavoitettavissa',
-    'heti',
-    'nyt',
     'min kuluttua',
   ]);
 }

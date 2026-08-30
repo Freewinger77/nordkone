@@ -165,7 +165,7 @@ function App() {
             messages: call.latest_message
               ? [{ id: call.id, direction: 'inbound', sender: 'Seller', message: call.latest_message, at: call.received_at }]
               : [],
-            derived_status: 'ready_for_call',
+            derived_status: call.classification === 'ready_for_call' ? 'ready_for_call' : call.classification || 'interested',
           },
           calendarCalls,
         })

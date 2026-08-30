@@ -89,3 +89,13 @@ export function sessionStatusFromClass(classification) {
 export function shouldForceNeedsHuman(classification) {
   return classification === 'needs_review' || classification === 'needs_human' || classification === 'unclear';
 }
+
+export function persistableInboundClass(classification) {
+  const map = {
+    needs_review: 'needs_human',
+    machine_available: 'unclear',
+    ready_for_call: 'interested',
+    booked: 'interested',
+  };
+  return map[classification] || classification;
+}

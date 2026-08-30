@@ -1,4 +1,9 @@
-import { classifyInbound, isNeedsReviewReply, normalizeInboundClassification } from '../shared/intent.js';
+import {
+  classifyInbound,
+  isNeedsReviewReply,
+  normalizeInboundClassification,
+  persistableInboundClass,
+} from '../shared/intent.js';
 
 let failed = 0;
 
@@ -29,6 +34,9 @@ for (const label of ['ready_for_call', 'booked', 'machine_available', 'needs_rev
   expect(`accept ${label}`, normalizeInboundClassification(label), label);
 }
 expect('drop garbage', normalizeInboundClassification('call_now'), null);
+expect('persist needs_review', persistableInboundClass('needs_review'), 'needs_human');
+expect('persist ready_for_call', persistableInboundClass('ready_for_call'), 'interested');
+expect('persist machine_available', persistableInboundClass('machine_available'), 'unclear');
 
 if (failed) {
   console.error(`FAILED ${failed}`);

@@ -6,6 +6,7 @@ import {
   isNeedsReviewReply,
   listingStatusFromClass,
   normalizeInboundClassification,
+  persistableInboundClass,
   sessionStatusFromClass,
   shouldForceNeedsHuman,
 } from '../lib/classify.js';
@@ -59,7 +60,7 @@ router.post('/wasup/inbound', async (req, res) => {
       source_customer_id: session?.source_customer_id || payload.nettikone_id || null,
       number,
       message,
-      classification,
+      classification: persistableInboundClass(classification),
       needs_human: needsHuman,
       raw_event: req.body,
     })

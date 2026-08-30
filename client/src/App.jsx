@@ -52,6 +52,7 @@ function App() {
   const [stage, setStage] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [activitySort, setActivitySort] = useState('newest');
   const [weekOffset, setWeekOffset] = useState(0);
   const [modal, setModal] = useState(false);
   const [advOpen, setAdvOpen] = useState(true);
@@ -372,13 +373,18 @@ function App() {
   ];
 
   const filter = stage ? FLOW_FILTERS[stage] : null;
-  const pool = filter ? leads.filter(filter.test) : leads;
+  const filtered = filter ? leads.filter(filter.test) : leads;
+  const pool = [...filtered].sort((a, b) => {
+    const delta = (b.activityAt || 0) - (a.activityAt || 0);
+    return activitySort === 'oldest' ? -delta : delta;
+  });
   const pageCount = Math.max(1, Math.ceil(pool.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
   const queueLeads = leads.filter((lead) => queueIds.includes(lead.id) && isLiveQueueLead(lead));
 
   const ctx = {
+    activitySort,
     advOpen,
     baseView,
     bookedLeads,
@@ -445,6 +451,10 @@ function App() {
     remainingToday: control?.remaining_today ?? Math.max(dailyCap - sentToday, 0),
     runScrape,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
+    toggleActivitySort: () => {
+      setActivitySort((value) => (value === 'newest' ? 'oldest' : 'newest'));
+      setPage(1);
+    },
     sendListing,
     setCapDraft,
     setDeskStatus,
@@ -884,9 +894,9 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
           ) : null}
           <span className="grow" />
           <span className="muted">{ctx.pool.length} leads</span>
-          <button className="btn" type="button">
+          <button className="btn" onClick={ctx.toggleActivitySort} type="button">
             <Glyph name="ArrowsDownUpWeightRegular" size={17} />
-            Last activity
+            Last activity · {ctx.activitySort === 'oldest' ? 'Oldest' : 'Newest'}
           </button>
           <button className="btn btn-ring" onClick={() => window.location.reload()} type="button">Refresh</button>
         </div>
@@ -1252,6 +1262,9 @@ function MobileOverview({ ctx }) {
       <div className="row" style={{ margin: '24px 0 12px', gap: 10 }}>
         <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>
         {ctx.filter ? <button className="link-clear" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+        <button className="btn" onClick={ctx.toggleActivitySort} type="button">
+          {ctx.activitySort === 'oldest' ? 'Oldest' : 'Newest'}
+        </button>
         <span className="muted">{ctx.pool.length ? `${(ctx.page - 1) * ctx.pageSize + 1}–${Math.min(ctx.page * ctx.pageSize, ctx.pool.length)} of ${ctx.pool.length}` : '0 of 0'}</span>
       </div>
       <div id="lead-table" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1417,6 +1430,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     opportunity: reconciled.opportunity,
     callbackAt: conversation.last_inbound_at || last?.at || null,
     bookedAt: conversation.calendar_booking?.start || listing.raw_data?.calendar_booking?.start || null,
+    activityAt: Date.parse(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at) || 0,
     ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',
     fields: [

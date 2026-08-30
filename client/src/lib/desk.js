@@ -233,6 +233,11 @@ export function ribbon(x0, x1, y0, y1, h) {
   return `M ${x0} ${y0} C ${m} ${y0}, ${m} ${y1}, ${x1} ${y1} L ${x1} ${y1 + h} C ${m} ${y1 + h}, ${m} ${y0 + h}, ${x0} ${y0 + h} Z`;
 }
 
+export function vRibbon(x0, y0, x1, y1, w) {
+  const m = (y0 + y1) / 2;
+  return `M ${x0} ${y0} C ${x0} ${m}, ${x1} ${m}, ${x1} ${y1} L ${x1 + w} ${y1} C ${x1 + w} ${m}, ${x0 + w} ${m}, ${x0 + w} ${y0} Z`;
+}
+
 export function smooth(vals, w, h, pad) {
   const max = Math.max(...vals, 1);
   const step = (w - pad * 2) / Math.max(vals.length - 1, 1);
@@ -256,7 +261,7 @@ export function poly(vals, w, h, pad) {
     .replace(/^/, 'M ');
 }
 
-export function buildFlow(counts, activeStage) {
+function flowStages(counts) {
   const messaged = counts.messaged || 0;
   const replied = counts.replied || 0;
   const noreply = Math.max(messaged - replied, 0);
@@ -304,6 +309,12 @@ export function buildFlow(counts, activeStage) {
     ['opportunities', 'lost', lost],
     ['opportunities', 'won', won],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
+
+  return { cols, linksSpec, scale };
+}
+
+export function buildFlow(counts, activeStage) {
+  const { cols, linksSpec, scale } = flowStages(counts);
 
   const vw = 1100;
   const bw = 16;
@@ -369,6 +380,73 @@ export function buildFlow(counts, activeStage) {
   });
 
   return { nodes, links, vw, vh };
+}
+
+export function buildVerticalFlow(counts, activeStage) {
+  const { cols, linksSpec, scale } = flowStages(counts);
+  const vw = 390;
+  const pad = 8;
+  const inner = vw - pad * 2;
+  const bh = 14;
+  const labelBand = 40;
+  const ribbonBand = 46;
+  const top = 6;
+  const gap = 8;
+  const unit = inner / scale;
+  const map = {};
+  const nodes = [];
+
+  cols.forEach((col, ri) => {
+    const y = top + ri * (bh + labelBand + ribbonBand);
+    const raw = col.map((n) => Math.max(n.v * unit, 16));
+    const used = raw.reduce((sum, w) => sum + w, 0) + gap * Math.max(col.length - 1, 0);
+    const extra = Math.max(inner - used, 0);
+    const rawSum = raw.reduce((sum, w) => sum + w, 0) || 1;
+    const widths = raw.map((w) => w + extra * (w / rawSum));
+    let x = pad;
+    col.forEach((n, ni) => {
+      const w = widths[ni];
+      const node = {
+        k: n.k,
+        x,
+        y,
+        h: bh,
+        w,
+        label: n.label,
+        count: `${n.v} (${n.pct})`,
+        c: n.c,
+        lfg: 'rgb(0,0,0)',
+        left: `${(x / vw) * 100}%`,
+        labelMax: `${Math.max(w, 72)}px`,
+        outCur: x,
+        inCur: x,
+      };
+      map[n.k] = node;
+      nodes.push(node);
+      x += w + gap;
+    });
+  });
+
+  const last = nodes[nodes.length - 1];
+  const vh = (last ? last.y + last.h + labelBand : 160) + 8;
+
+  const links = linksSpec.filter(([a, b]) => map[a] && map[b]).map(([a, b, v]) => {
+    const s = map[a];
+    const t = map[b];
+    const remainS = Math.max(s.x + s.w - s.outCur, 8);
+    const remainT = Math.max(t.x + t.w - t.inCur, 8);
+    const w = Math.min(Math.max(v * unit, 8), remainS, remainT);
+    const d = vRibbon(s.outCur, s.y + s.h, t.inCur, t.y, w);
+    s.outCur += w;
+    t.inCur += w;
+    return { d, from: a, to: b };
+  });
+
+  for (const node of nodes) {
+    node.top = `${((node.y + node.h + 4) / vh) * 100}%`;
+  }
+
+  return { nodes, links, vw, vh, vertical: true };
 }
 
 export function weekdayReplySeries(conversations = []) {

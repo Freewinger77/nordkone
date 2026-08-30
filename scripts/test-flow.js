@@ -1,4 +1,4 @@
-import { buildFlow, buildWeek } from '../client/src/lib/desk.js';
+import { buildFlow, buildVerticalFlow, buildWeek } from '../client/src/lib/desk.js';
 
 const flow = buildFlow({
   eligible: 511,
@@ -116,6 +116,41 @@ if (!week.days.some((day) => day.events.some((event) => event.kind === 'callback
 }
 if (week.days.flatMap((day) => day.events).some((event) => event.kind === 'booked') === false && !week.count.includes('Call Now')) {
   console.error('week label should mention Call Now', week.count);
+  failed += 1;
+}
+
+const vFlow = buildVerticalFlow({
+  eligible: 511,
+  messaged: 48,
+  replied: 35,
+  noreply: 13,
+  callback: 10,
+  notint: 11,
+  review: 1,
+  won: 0,
+  lost: 4,
+  booked: 2,
+  awaitReply: 7,
+  opportunities: 16,
+});
+const vMessaged = vFlow.nodes.find((node) => node.k === 'messaged');
+const vReplied = vFlow.nodes.find((node) => node.k === 'replied');
+const vOpps = vFlow.nodes.find((node) => node.k === 'opportunities');
+const vBooked = vFlow.nodes.find((node) => node.k === 'booked');
+if (!vFlow.vertical || vReplied.y <= vMessaged.y || vBooked.y <= vOpps.y) {
+  console.error('vertical flow should stack rows downward', { y: { messaged: vMessaged.y, replied: vReplied.y, booked: vBooked.y } });
+  failed += 1;
+}
+if (vMessaged.h >= vMessaged.w || vReplied.x < vMessaged.x - 1) {
+  console.error('vertical nodes should be wide bars', vMessaged, vReplied);
+  failed += 1;
+}
+if (vFlow.links.some((link) => {
+  const from = vFlow.nodes.find((node) => node.k === link.from);
+  const to = vFlow.nodes.find((node) => node.k === link.to);
+  return to.y <= from.y;
+})) {
+  console.error('vertical ribbons should run top to bottom', vFlow.links);
   failed += 1;
 }
 

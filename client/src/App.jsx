@@ -8,6 +8,7 @@ import {
   QUEUE_KEY,
   bookedSpark,
   buildFlow,
+  buildVerticalFlow,
   buildOutboundMessage,
   buildWeek,
   countFlow,
@@ -328,6 +329,7 @@ function App() {
 
   const flowCounts = useMemo(() => countFlow(leads, summary), [leads, summary]);
   const flow = useMemo(() => buildFlow(flowCounts, stage), [flowCounts, stage]);
+  const vFlow = useMemo(() => buildVerticalFlow(flowCounts, stage), [flowCounts, stage]);
   const replies = useMemo(() => weekdayReplySeries(conversations), [conversations]);
   const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
   const week = useMemo(
@@ -394,6 +396,7 @@ function App() {
     error,
     filter,
     flow,
+    vFlow,
     from,
     isDesktop,
     kpi,
@@ -543,7 +546,9 @@ function MobileDesk({ ctx }) {
       <nav className="m-tabbar">
         {ctx.nav.map((item) => (
           <button className={`m-tab ${ctx.baseView === item.id ? 'on' : ''}`} key={item.id} onClick={() => ctx.pickNav(item.id)} type="button">
-            <Glyph name={item.icon} size={20} />
+            <span className="m-tab-icon">
+              <Glyph name={item.icon} size={20} />
+            </span>
             <span>{item.short}</span>
           </button>
         ))}
@@ -658,50 +663,7 @@ function Overview({ ctx }) {
             <span className="grow" />
             <span className="muted">Click a stage to filter</span>
           </div>
-          <div className="flow-wrap">
-            <svg className="flow-svg" viewBox={`0 0 ${ctx.flow.vw || 1100} ${ctx.flow.vh || 340}`} preserveAspectRatio="xMidYMid meet" style={{ aspectRatio: `${ctx.flow.vw || 1100} / ${ctx.flow.vh || 340}` }}>
-              {ctx.flow.links.map((link) => (
-                <path
-                  d={link.d}
-                  fill="rgba(0,0,0,0.09)"
-                  key={`${link.from}-${link.to}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    ctx.pickStage(link.to);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                />
-              ))}
-              {ctx.flow.nodes.map((node) => (
-                <g
-                  key={node.k}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    ctx.pickStage(node.k);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <rect fill="transparent" height={node.h + 16} width={node.w + 28} x={node.x - 14} y={node.y - 8} />
-                  <rect
-                    fill={node.c}
-                    height={node.h}
-                    rx="5"
-                    stroke={ctx.stage === node.k ? 'rgb(0,0,0)' : 'none'}
-                    strokeWidth={ctx.stage === node.k ? 2 : 0}
-                    width={node.w}
-                    x={node.x}
-                    y={node.y}
-                  />
-                </g>
-              ))}
-            </svg>
-            {ctx.flow.nodes.map((node) => (
-              <div className={`flow-label${ctx.stage === node.k ? ' is-on' : ''}`} key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
-                <strong style={{ color: node.lfg }}>{node.label}</strong>
-                <span>{node.count}</span>
-              </div>
-            ))}
-          </div>
+          <CampaignFlow flow={ctx.flow} onPick={ctx.pickStage} stage={ctx.stage} />
         </article>
 
         <article className="card reply-card rise-in">
@@ -1246,6 +1208,72 @@ function OutboundModal({ ctx, onClose }) {
   );
 }
 
+function CampaignFlow({ flow, onPick, stage, vertical = false }) {
+  if (!flow?.nodes?.length) return null;
+  return (
+    <div className={vertical ? 'flow-wrap v-flow' : 'flow-wrap'}>
+      <svg
+        className={vertical ? 'v-flow-svg' : 'flow-svg'}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ aspectRatio: `${flow.vw || 1100} / ${flow.vh || 340}` }}
+        viewBox={`0 0 ${flow.vw || 1100} ${flow.vh || 340}`}
+      >
+        {flow.links.map((link) => (
+          <path
+            d={link.d}
+            fill="rgba(0,0,0,0.09)"
+            key={`${link.from}-${link.to}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPick(link.to);
+            }}
+            style={{ cursor: 'pointer' }}
+          />
+        ))}
+        {flow.nodes.map((node) => (
+          <g
+            key={node.k}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPick(node.k);
+            }}
+            style={{ cursor: 'pointer' }}
+          >
+            <rect
+              fill="transparent"
+              height={node.h + (vertical ? 22 : 16)}
+              width={node.w + (vertical ? 8 : 28)}
+              x={node.x - (vertical ? 4 : 14)}
+              y={node.y - (vertical ? 8 : 8)}
+            />
+            <rect
+              fill={node.c}
+              height={node.h}
+              rx="5"
+              stroke={stage === node.k ? 'rgb(0,0,0)' : 'none'}
+              strokeWidth={stage === node.k ? 2 : 0}
+              width={node.w}
+              x={node.x}
+              y={node.y}
+            />
+          </g>
+        ))}
+      </svg>
+      {flow.nodes.map((node) => (
+        <div
+          className={`flow-label${vertical ? ' v-flow-label' : ''}${stage === node.k ? ' is-on' : ''}`}
+          key={`${node.k}-label`}
+          onClick={() => onPick(node.k)}
+          style={{ left: node.left, maxWidth: vertical ? node.labelMax : undefined, top: node.top }}
+        >
+          <strong style={{ color: node.lfg }}>{node.label}</strong>
+          <span>{node.count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MobileOverview({ ctx }) {
   if (ctx.booting) return <OverviewSkeleton mobile />;
   return (
@@ -1276,16 +1304,10 @@ function MobileOverview({ ctx }) {
           <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
         </button>
       </div>
-      <div style={{ marginTop: 20 }}>
+      <div className="v-flow-card">
         <div className="card-title">Campaign flow</div>
         <div className="muted" style={{ paddingBottom: 8 }}>Tap a stage to filter the list</div>
-        {ctx.flow.nodes.map((node) => (
-          <button className="m-flow" key={node.k} onClick={() => ctx.pickStage(node.k)} type="button">
-            <span className="m-flow-bar" style={{ background: node.c }} />
-            <span className="m-flow-label">{node.label}</span>
-            <span className="muted">{node.count}</span>
-          </button>
-        ))}
+        <CampaignFlow flow={ctx.vFlow} onPick={ctx.pickStage} stage={ctx.stage} vertical />
       </div>
       <div className="row" style={{ margin: '24px 0 12px', gap: 10 }}>
         <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>

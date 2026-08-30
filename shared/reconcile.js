@@ -157,6 +157,8 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const booked = stage === 'Booked';
   const callback = stage === 'Callback';
   const awaiting = callback || stage === 'Interested';
+  const thinReply = stage === 'Replied';
+  const opportunity = booked || callback || lost || won;
 
   return {
     stage,
@@ -170,6 +172,8 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     booked,
     callback,
     awaiting,
+    thinReply,
+    opportunity,
     sold,
     opted,
   };
@@ -183,7 +187,9 @@ export function matchesFlowFilter(lead, key) {
   if (!key || key === 'messaged') return true;
   if (key === 'replied') return Boolean(lead.replied);
   if (key === 'noreply') return Boolean(lead.noReply);
-  if (key === 'callback' || key === 'interested' || key === 'await') return isOpenOpportunity(lead);
+  if (key === 'callback' || key === 'interested') return isOpenOpportunity(lead);
+  if (key === 'opportunities') return Boolean(lead.opportunity);
+  if (key === 'await' || key === 'awaitReply') return Boolean(lead.thinReply);
   if (key === 'notint') return Boolean(lead.notInterestedSignal);
   if (key === 'review') return Boolean(lead.reviewSignal);
   if (key === 'won') return Boolean(lead.won);
@@ -207,6 +213,8 @@ export function countFlow(leads = [], summary = null) {
     booked: 0,
     callback: 0,
     await: 0,
+    awaitReply: 0,
+    opportunities: 0,
     pipeline: 0,
   };
 
@@ -221,6 +229,8 @@ export function countFlow(leads = [], summary = null) {
     if (lead.booked) counts.booked += 1;
     if (lead.callback) counts.callback += 1;
     if (lead.awaiting) counts.await += 1;
+    if (lead.thinReply) counts.awaitReply += 1;
+    if (lead.opportunity) counts.opportunities += 1;
     if (lead.callback || lead.awaiting || lead.booked) counts.pipeline += 1;
   }
 
@@ -231,11 +241,13 @@ export const FLOW_FILTERS = {
   messaged: { label: 'Messaged', test: (lead) => matchesFlowFilter(lead, 'messaged') },
   replied: { label: 'Replied', test: (lead) => matchesFlowFilter(lead, 'replied') },
   noreply: { label: 'No reply', test: (lead) => matchesFlowFilter(lead, 'noreply') },
-  callback: { label: 'Callback', test: (lead) => matchesFlowFilter(lead, 'callback') },
+  opportunities: { label: 'Opportunities', test: (lead) => matchesFlowFilter(lead, 'opportunities') },
   booked: { label: 'Booked', test: (lead) => matchesFlowFilter(lead, 'booked') },
+  callback: { label: 'Callback', test: (lead) => matchesFlowFilter(lead, 'callback') },
+  lost: { label: 'Deal lost', test: (lead) => matchesFlowFilter(lead, 'lost') },
   notint: { label: 'Not interested', test: (lead) => matchesFlowFilter(lead, 'notint') },
   review: { label: 'Review', test: (lead) => matchesFlowFilter(lead, 'review') },
+  awaitReply: { label: 'Awaiting reply', test: (lead) => matchesFlowFilter(lead, 'awaitReply') },
   won: { label: 'Deal won', test: (lead) => matchesFlowFilter(lead, 'won') },
-  lost: { label: 'Deal lost', test: (lead) => matchesFlowFilter(lead, 'lost') },
   pipeline: { label: 'Open pipeline', test: (lead) => matchesFlowFilter(lead, 'pipeline') },
 };

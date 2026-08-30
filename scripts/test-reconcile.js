@@ -97,6 +97,8 @@ const expectCounts = {
   booked: 1,
   callback: 1,
   await: 1,
+  awaitReply: 2,
+  opportunities: 4,
 };
 
 const stages = Object.fromEntries(fixtures.map((row) => [row.id, row.stage]));

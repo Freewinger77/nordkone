@@ -1407,6 +1407,8 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     booked: reconciled.booked,
     callback: reconciled.callback,
     awaiting: reconciled.awaiting,
+    thinReply: reconciled.thinReply,
+    opportunity: reconciled.opportunity,
     ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',
     fields: [

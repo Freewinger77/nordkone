@@ -5,19 +5,21 @@ const flow = buildFlow({
   messaged: 48,
   replied: 35,
   noreply: 13,
-  callback: 14,
+  callback: 10,
   notint: 11,
   review: 1,
   won: 0,
   lost: 4,
   booked: 2,
+  awaitReply: 7,
+  opportunities: 16,
 });
 
 let failed = 0;
 const keys = flow.nodes.map((node) => node.k);
 const links = flow.links.map((link) => `${link.from}->${link.to}`);
 
-for (const needed of ['messaged', 'replied', 'noreply', 'callback', 'booked', 'review', 'lost', 'notint']) {
+for (const needed of ['messaged', 'replied', 'noreply', 'opportunities', 'notint', 'review', 'awaitReply', 'booked', 'callback', 'lost']) {
   if (!keys.includes(needed)) {
     console.error('missing node', needed);
     failed += 1;
@@ -29,14 +31,23 @@ if (keys.includes('won') || keys.includes('interested') || keys.includes('await'
   failed += 1;
 }
 
-for (const needed of ['messaged->replied', 'replied->callback', 'replied->booked', 'replied->review', 'replied->lost', 'replied->notint']) {
+for (const needed of [
+  'messaged->replied',
+  'replied->opportunities',
+  'replied->notint',
+  'replied->review',
+  'replied->awaitReply',
+  'opportunities->booked',
+  'opportunities->callback',
+  'opportunities->lost',
+]) {
   if (!links.includes(needed)) {
     console.error('missing link', needed, links);
     failed += 1;
   }
 }
 
-if (links.some((link) => link.includes('won') || link.includes('interested') || link.includes('await') || link.startsWith('callback->') || link.startsWith('booked->'))) {
+if (links.some((link) => link.includes('won') || link.startsWith('replied->booked') || link.startsWith('replied->callback') || link.startsWith('replied->lost'))) {
   console.error('zero or skip links should not render', links);
   failed += 1;
 }
@@ -46,36 +57,40 @@ const withWon = buildFlow({
   messaged: 48,
   replied: 35,
   noreply: 13,
-  callback: 14,
+  callback: 10,
   notint: 11,
   review: 1,
   won: 3,
   lost: 4,
   booked: 2,
+  awaitReply: 7,
+  opportunities: 19,
 });
-if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'replied' && link.to === 'won')) {
-  console.error('positive Deal won should render from Replied');
+if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'opportunities' && link.to === 'won')) {
+  console.error('positive Deal won should render from Opportunities');
   failed += 1;
 }
 
 const messaged = flow.nodes.find((node) => node.k === 'messaged');
 const replied = flow.nodes.find((node) => node.k === 'replied');
+const opportunities = flow.nodes.find((node) => node.k === 'opportunities');
+const booked = flow.nodes.find((node) => node.k === 'booked');
 const callback = flow.nodes.find((node) => node.k === 'callback');
 const lost = flow.nodes.find((node) => node.k === 'lost');
-if (callback.x < flow.vw * 0.55) {
-  console.error('last column should sit on the right of the card', { x: callback.x, vw: flow.vw });
+if (booked.x < flow.vw * 0.55) {
+  console.error('outcome column should sit on the right of the card', { x: booked.x, vw: flow.vw });
   failed += 1;
 }
-if (replied.x - messaged.x < 200) {
+if (replied.x - messaged.x < 180) {
   console.error('columns are bunched too tightly', { messaged: messaged.x, replied: replied.x });
   failed += 1;
 }
-if (callback.y + 1 < replied.y) {
-  console.error('Callback sits above Replied', { callback: callback.y, replied: replied.y });
+if (booked.y + 1 < opportunities.y) {
+  console.error('Booked sits above Opportunities', { booked: booked.y, opportunities: opportunities.y });
   failed += 1;
 }
-if (callback.y > lost.y) {
-  console.error('Callback should sit above Deal lost', { callback: callback.y, lost: lost.y });
+if (booked.y > callback.y || callback.y > lost.y) {
+  console.error('Booked / Callback / Lost order is wrong', { booked: booked.y, callback: callback.y, lost: lost.y });
   failed += 1;
 }
 

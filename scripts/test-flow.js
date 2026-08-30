@@ -5,39 +5,38 @@ const flow = buildFlow({
   messaged: 48,
   replied: 35,
   noreply: 13,
-  interested: 17,
+  callback: 14,
   notint: 11,
   review: 1,
   won: 0,
   lost: 4,
   booked: 2,
-  await: 17,
 });
 
 let failed = 0;
 const keys = flow.nodes.map((node) => node.k);
 const links = flow.links.map((link) => `${link.from}->${link.to}`);
 
-for (const needed of ['messaged', 'replied', 'noreply', 'interested', 'notint', 'booked', 'review', 'lost']) {
+for (const needed of ['messaged', 'replied', 'noreply', 'callback', 'booked', 'review', 'lost', 'notint']) {
   if (!keys.includes(needed)) {
     console.error('missing node', needed);
     failed += 1;
   }
 }
 
-if (keys.includes('won')) {
-  console.error('zero Deal won should not render a node', keys);
+if (keys.includes('won') || keys.includes('interested') || keys.includes('await')) {
+  console.error('removed or zero nodes should not render', keys);
   failed += 1;
 }
 
-for (const needed of ['messaged->replied', 'replied->interested', 'interested->await', 'interested->booked', 'interested->review', 'interested->lost']) {
+for (const needed of ['messaged->replied', 'replied->callback', 'replied->booked', 'replied->review', 'replied->lost', 'replied->notint']) {
   if (!links.includes(needed)) {
     console.error('missing link', needed, links);
     failed += 1;
   }
 }
 
-if (links.some((link) => link.includes('won') || link.startsWith('replied->review') || link.startsWith('replied->booked') || link.startsWith('replied->lost') || link.startsWith('booked->'))) {
+if (links.some((link) => link.includes('won') || link.includes('interested') || link.includes('await') || link.startsWith('callback->') || link.startsWith('booked->'))) {
   console.error('zero or skip links should not render', links);
   failed += 1;
 }
@@ -47,28 +46,27 @@ const withWon = buildFlow({
   messaged: 48,
   replied: 35,
   noreply: 13,
-  interested: 17,
+  callback: 14,
   notint: 11,
   review: 1,
   won: 3,
   lost: 4,
   booked: 2,
-  await: 17,
 });
-if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'interested' && link.to === 'won')) {
-  console.error('positive Deal won should render from Interested');
+if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'replied' && link.to === 'won')) {
+  console.error('positive Deal won should render from Replied');
   failed += 1;
 }
 
-const interested = flow.nodes.find((node) => node.k === 'interested');
+const replied = flow.nodes.find((node) => node.k === 'replied');
+const callback = flow.nodes.find((node) => node.k === 'callback');
 const lost = flow.nodes.find((node) => node.k === 'lost');
-const awaiting = flow.nodes.find((node) => node.k === 'await');
-if (lost.y + 1 < interested.y) {
-  console.error('Deal lost sits above Interested', { lost: lost.y, interested: interested.y });
+if (callback.y + 1 < replied.y) {
+  console.error('Callback sits above Replied', { callback: callback.y, replied: replied.y });
   failed += 1;
 }
-if (awaiting.y > lost.y) {
-  console.error('Awaiting booking should sit above Deal lost', { awaiting: awaiting.y, lost: lost.y });
+if (callback.y > lost.y) {
+  console.error('Callback should sit above Deal lost', { callback: callback.y, lost: lost.y });
   failed += 1;
 }
 

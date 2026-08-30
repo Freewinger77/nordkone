@@ -25,6 +25,7 @@ export {
 } from '../../../shared/reconcile.js';
 
 export function statusDot(label) {
+  if (label === 'Replied') return 'rgb(255,204,0)';
   return STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
 }
 
@@ -239,8 +240,7 @@ export function buildFlow(counts, activeStage) {
   const won = counts.won || 0;
   const lost = counts.lost || 0;
   const booked = counts.booked || 0;
-  const awaiting = counts.interested || counts.await || 0;
-  const interested = Math.max(awaiting + booked + review + won + lost, replied - notint, 0);
+  const callback = counts.callback || counts.await || 0;
   const scale = Math.max(messaged, 1);
 
   const cols = [
@@ -250,15 +250,12 @@ export function buildFlow(counts, activeStage) {
       { k: 'noreply', label: 'No reply', v: noreply, pct: pct(noreply, messaged), c: 'rgba(0,0,0,0.2)' },
     ],
     [
-      { k: 'interested', label: 'Interested', v: interested, pct: pct(interested, replied), c: 'rgb(113,221,140)' },
+      { k: 'callback', label: 'Callback', v: callback, pct: pct(callback, replied), c: 'rgb(76,152,253)' },
+      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, replied), c: 'rgb(79,80,127)' },
+      { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
+      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, replied), c: 'rgb(113,221,140)' },
       { k: 'notint', label: 'Not interested', v: notint, pct: pct(notint, replied), c: 'rgba(0,0,0,0.2)' },
-    ],
-    [
-      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, interested), c: 'rgb(255,204,0)' },
-      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, interested), c: 'rgb(79,80,127)' },
-      { k: 'review', label: 'Review', v: review, pct: pct(review, interested), c: 'rgb(184,153,235)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, interested), c: 'rgb(255,71,71)' },
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, interested), c: 'rgb(113,221,140)' },
     ],
   ]
     .map((col, index) => col.filter((node) => node.v > 0 || (index === 0 && node.k === 'messaged')))
@@ -267,13 +264,12 @@ export function buildFlow(counts, activeStage) {
   const linksSpec = [
     ['messaged', 'replied', replied],
     ['messaged', 'noreply', noreply],
-    ['replied', 'interested', interested],
+    ['replied', 'callback', callback],
+    ['replied', 'booked', booked],
+    ['replied', 'review', review],
+    ['replied', 'lost', lost],
+    ['replied', 'won', won],
     ['replied', 'notint', notint],
-    ['interested', 'await', awaiting],
-    ['interested', 'booked', booked],
-    ['interested', 'review', review],
-    ['interested', 'lost', lost],
-    ['interested', 'won', won],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 
   const x = [16, 290, 560, 830];
@@ -289,9 +285,9 @@ export function buildFlow(counts, activeStage) {
   const nodes = [];
 
   cols.forEach((col, ci) => {
-    const lastCol = ci === cols.length - 1 && map.interested;
-    let y = lastCol ? map.interested.y : top;
-    let prevC = lastCol ? map.interested.y - lmin : -999;
+    const lastCol = ci === cols.length - 1 && map.replied;
+    let y = lastCol ? map.replied.y : top;
+    let prevC = lastCol ? map.replied.y - lmin : -999;
     col.forEach((n) => {
       const h = Math.max(n.v * unit, 8);
       let lc = y + h / 2;

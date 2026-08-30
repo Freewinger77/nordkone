@@ -177,7 +177,7 @@ function App() {
     if (queue !== null || !leads.length) return;
     setQueue(
       leads
-        .filter((lead) => lead.interestedSignal || lead.awaiting || lead.reviewSignal || lead.booked)
+        .filter((lead) => lead.callback || lead.booked || lead.reviewSignal)
         .map((lead) => lead.id)
     );
   }, [leads, queue]);
@@ -336,7 +336,7 @@ function App() {
   const kpi = {
     booked: String(flowCounts.booked || 0),
     bookedDelta: flowCounts.booked ? `${flowCounts.booked} live` : '',
-    opps: String(flowCounts.interested || 0),
+    opps: String(flowCounts.callback || flowCounts.interested || 0),
     won: String(flowCounts.won || 0),
     lost: String(flowCounts.lost || 0),
     oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
@@ -370,7 +370,7 @@ function App() {
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
   const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
   const bookedLeads = leads.filter((lead) => lead.booked);
-  const waitLeads = leads.filter((lead) => lead.awaiting);
+  const waitLeads = leads.filter((lead) => lead.callback || lead.awaiting);
 
   const ctx = {
     advOpen,
@@ -602,7 +602,7 @@ function Overview({ ctx }) {
           </div>
           <div className="muted kpi-sub">active calendar bookings</div>
         </button>
-        <button className={`card card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
+        <button className={`card card-btn rise-in ${ctx.stage === 'callback' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('callback')} type="button">
           <div className="kpi-head">
             <span className="dot live" />
             <span className="card-title">Opportunities</span>
@@ -1216,7 +1216,7 @@ function MobileOverview({ ctx }) {
           <div className="muted">Calls booked</div>
           <div className="kpi-num">{ctx.kpi.booked}</div>
         </button>
-        <button className={`m-card card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
+        <button className={`m-card card-btn ${ctx.stage === 'callback' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('callback')} type="button">
           <div className="muted">Opportunities</div>
           <div className="kpi-num">{ctx.kpi.opps}</div>
         </button>
@@ -1410,6 +1410,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     won: reconciled.won,
     lost: reconciled.lost,
     booked: reconciled.booked,
+    callback: reconciled.callback,
     awaiting: reconciled.awaiting,
     ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',

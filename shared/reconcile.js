@@ -11,8 +11,10 @@ const DESK_LABELS = new Set([
 ]);
 
 const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Interested']);
+const THIN_DESK_LABELS = new Set(['Callback', 'Interested']);
 
 const STALE_BOOKING_MS = 14 * 24 * 60 * 60 * 1000;
+const CALLBACK_MESSAGE_MIN = 5;
 
 export function bookingFromRecord(record = {}) {
   const raw = record.raw_data || record.raw_event || record;
@@ -50,6 +52,16 @@ function hasInbound(conversation = {}) {
   if (conversation.last_inbound_at) return true;
   if (Number(conversation.inbound_count) > 0) return true;
   return (conversation.messages || []).some((message) => message.direction === 'inbound');
+}
+
+export function conversationDepth(conversation = {}) {
+  const messages = conversation.messages || [];
+  if (messages.length) return messages.length;
+  return Number(conversation.inbound_count || 0) + Number(conversation.outbound_count || 0);
+}
+
+export function isDeepConversation(conversation = {}) {
+  return conversationDepth(conversation) >= CALLBACK_MESSAGE_MIN;
 }
 
 function latestClassification(conversation = {}) {
@@ -119,24 +131,31 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
       derived === 'machine_available' ||
       classified === 'interested');
   const callbackSignal = derived === 'ready_for_call' || classified === 'needs_human';
+  const deep = isDeepConversation(conversation);
+  const callbackIntent = interestedSignal || callbackSignal;
 
   let stage;
-  const deskWins = desk && DESK_LABELS.has(desk) && !(bookedSignal && SOFT_DESK_LABELS.has(desk));
-  if (deskWins) stage = desk;
+  const deskWins =
+    desk &&
+    DESK_LABELS.has(desk) &&
+    !(bookedSignal && SOFT_DESK_LABELS.has(desk)) &&
+    !(THIN_DESK_LABELS.has(desk) && !deep && !bookedSignal);
+  if (deskWins && desk === 'Interested' && deep && !bookedSignal) stage = 'Callback';
+  else if (deskWins) stage = desk;
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
   else if (notInterested) stage = 'Not Interested';
   else if (bookedSignal) stage = 'Booked';
-  else if (interestedSignal && callbackSignal) stage = 'Callback';
-  else if (interestedSignal) stage = 'Interested';
-  else if (callbackSignal && inbound) stage = 'Callback';
-  else if (inbound) stage = 'Review';
+  else if (inbound && deep && callbackIntent) stage = 'Callback';
+  else if (inbound && (classified === 'unclear' || derived === 'needs_review') && !interestedSignal) stage = 'Review';
+  else if (inbound) stage = 'Replied';
   else stage = 'No Answer';
 
   const won = stage === 'Deal Won';
   const lost = stage === 'Deal Lost' || sold;
   const booked = stage === 'Booked';
-  const awaiting = stage === 'Interested' || stage === 'Callback';
+  const callback = stage === 'Callback';
+  const awaiting = callback || stage === 'Interested';
 
   return {
     stage,
@@ -148,6 +167,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     won,
     lost,
     booked,
+    callback,
     awaiting,
     sold,
     opted,
@@ -155,21 +175,20 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
 }
 
 export function isOpenOpportunity(lead) {
-  return Boolean((lead.interestedSignal || lead.awaiting) && !lead.lost && !lead.booked && !lead.won);
+  return Boolean((lead.callback || lead.awaiting) && !lead.lost && !lead.booked && !lead.won);
 }
 
 export function matchesFlowFilter(lead, key) {
   if (!key || key === 'messaged') return true;
   if (key === 'replied') return Boolean(lead.replied);
   if (key === 'noreply') return Boolean(lead.noReply);
-  if (key === 'interested') return isOpenOpportunity(lead);
+  if (key === 'callback' || key === 'interested' || key === 'await') return isOpenOpportunity(lead);
   if (key === 'notint') return Boolean(lead.notInterestedSignal);
   if (key === 'review') return Boolean(lead.reviewSignal);
   if (key === 'won') return Boolean(lead.won);
   if (key === 'lost') return Boolean(lead.lost);
   if (key === 'booked') return Boolean(lead.booked);
-  if (key === 'await') return Boolean(lead.awaiting);
-  if (key === 'pipeline') return Boolean(lead.awaiting || lead.booked);
+  if (key === 'pipeline') return Boolean(lead.callback || lead.awaiting || lead.booked);
   return true;
 }
 
@@ -185,6 +204,7 @@ export function countFlow(leads = [], summary = null) {
     won: 0,
     lost: 0,
     booked: 0,
+    callback: 0,
     await: 0,
     pipeline: 0,
   };
@@ -198,8 +218,9 @@ export function countFlow(leads = [], summary = null) {
     if (lead.won) counts.won += 1;
     if (lead.lost) counts.lost += 1;
     if (lead.booked) counts.booked += 1;
+    if (lead.callback) counts.callback += 1;
     if (lead.awaiting) counts.await += 1;
-    if (lead.awaiting || lead.booked) counts.pipeline += 1;
+    if (lead.callback || lead.awaiting || lead.booked) counts.pipeline += 1;
   }
 
   return counts;
@@ -209,12 +230,11 @@ export const FLOW_FILTERS = {
   messaged: { label: 'Messaged', test: (lead) => matchesFlowFilter(lead, 'messaged') },
   replied: { label: 'Replied', test: (lead) => matchesFlowFilter(lead, 'replied') },
   noreply: { label: 'No reply', test: (lead) => matchesFlowFilter(lead, 'noreply') },
-  interested: { label: 'Interested', test: (lead) => matchesFlowFilter(lead, 'interested') },
+  callback: { label: 'Callback', test: (lead) => matchesFlowFilter(lead, 'callback') },
+  booked: { label: 'Booked', test: (lead) => matchesFlowFilter(lead, 'booked') },
   notint: { label: 'Not interested', test: (lead) => matchesFlowFilter(lead, 'notint') },
   review: { label: 'Review', test: (lead) => matchesFlowFilter(lead, 'review') },
   won: { label: 'Deal won', test: (lead) => matchesFlowFilter(lead, 'won') },
   lost: { label: 'Deal lost', test: (lead) => matchesFlowFilter(lead, 'lost') },
-  booked: { label: 'Booked', test: (lead) => matchesFlowFilter(lead, 'booked') },
-  await: { label: 'Awaiting booking', test: (lead) => matchesFlowFilter(lead, 'await') },
   pipeline: { label: 'Open pipeline', test: (lead) => matchesFlowFilter(lead, 'pipeline') },
 };

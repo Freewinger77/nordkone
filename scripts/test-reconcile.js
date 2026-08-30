@@ -16,6 +16,24 @@ const fixtures = [
     conversation: { status: 'interested', interest_status: 'interested', last_inbound_at: '2026-08-20', inbound_count: 1 },
   }),
   lead({
+    listing: { nettikone_id: 'call-1', status: 'interested' },
+    conversation: {
+      status: 'interested',
+      interest_status: 'interested',
+      derived_status: 'ready_for_call',
+      last_inbound_at: '2026-08-29',
+      inbound_count: 2,
+      outbound_count: 3,
+      messages: [
+        { direction: 'outbound' },
+        { direction: 'inbound', classification: 'interested' },
+        { direction: 'outbound' },
+        { direction: 'inbound', classification: 'interested' },
+        { direction: 'outbound' },
+      ],
+    },
+  }),
+  lead({
     listing: { nettikone_id: 'book-1', status: 'replied' },
     conversation: {
       status: 'replied',
@@ -68,24 +86,26 @@ const fixtures = [
 
 const counts = countFlow(fixtures, { eligible: 10 });
 const expectCounts = {
-    messaged: 9,
-    replied: 8,
+    messaged: 10,
+    replied: 9,
     noreply: 1,
-    interested: 2,
+    interested: 1,
     notint: 2,
   review: 1,
   won: 1,
   lost: 1,
   booked: 1,
-  await: 2,
+  callback: 1,
+  await: 1,
 };
 
 const stages = Object.fromEntries(fixtures.map((row) => [row.id, row.stage]));
 const expectStages = {
   'sold-1': 'Deal Lost',
-  'int-1': 'Interested',
+  'int-1': 'Replied',
+  'call-1': 'Callback',
   'book-1': 'Booked',
-  'old-book': 'Interested',
+  'old-book': 'Replied',
   silent: 'No Answer',
   nope: 'Not Interested',
   review: 'Review',
@@ -107,9 +127,9 @@ for (const [id, stage] of Object.entries(expectStages)) {
   }
 }
 
-const interested = fixtures.filter((row) => matchesFlowFilter(row, 'interested'));
-if (interested.length !== counts.interested) {
-  console.error('interested filter/count mismatch', interested.length, counts.interested);
+const interested = fixtures.filter((row) => matchesFlowFilter(row, 'callback'));
+if (interested.length !== counts.callback || interested[0]?.id !== 'call-1') {
+  console.error('callback filter/count mismatch', interested.map((row) => row.id), counts.callback);
   failed += 1;
 }
 const lost = fixtures.filter((row) => matchesFlowFilter(row, 'lost'));
@@ -206,6 +226,45 @@ const notIntBooked = lead({
 });
 if (notIntBooked.stage !== 'Not Interested') {
   console.error('Not Interested should not be overridden by a booking', notIntBooked.stage);
+  failed += 1;
+}
+
+function thread(count, classification = 'interested') {
+  return Array.from({ length: count }, (_, index) => ({
+    direction: index % 2 === 0 ? 'outbound' : 'inbound',
+    classification: index % 2 ? classification : undefined,
+  }));
+}
+
+const thinReply = lead({
+  listing: { nettikone_id: 'thin-reply' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    derived_status: 'ready_for_call',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    messages: thread(3),
+  },
+});
+if (thinReply.stage !== 'Replied' || thinReply.callback || thinReply.awaiting) {
+  console.error('one-reply interested chat should stay Replied', thinReply);
+  failed += 1;
+}
+
+const deepCallback = lead({
+  listing: { nettikone_id: 'deep-callback' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    derived_status: 'ready_for_call',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 2,
+    messages: thread(5),
+  },
+});
+if (deepCallback.stage !== 'Callback' || !deepCallback.callback) {
+  console.error('5+ message interested chat should be Callback', deepCallback);
   failed += 1;
 }
 

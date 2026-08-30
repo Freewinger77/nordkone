@@ -288,7 +288,7 @@ function App() {
     try {
       await apiSend('/api/leads/status', {
         method: 'PATCH',
-        body: { nettikone_id: lead.listingId, desk_status: deskStatus === 'Call Now' ? 'Callback' : deskStatus },
+        body: { nettikone_id: lead.listingId, desk_status: deskStatus === 'Call Now' ? 'Callback' : deskStatus === 'Lost / Sold' ? 'Deal Lost' : deskStatus },
       });
       await load();
     } catch (statusError) {
@@ -625,7 +625,7 @@ function Overview({ ctx }) {
         <button className={`card card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
           <div className="kpi-head">
             <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
-            <span className="card-title">Deal lost</span>
+            <span className="card-title">Lost / Sold</span>
           </div>
           <div className="kpi-num">{ctx.kpi.lost}</div>
           <div className="muted kpi-sub">{ctx.kpi.lostPct}</div>
@@ -1226,7 +1226,7 @@ function MobileOverview({ ctx }) {
           <div className="kpi-num">{ctx.kpi.won}</div>
         </button>
         <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
-          <div className="muted">Deal lost</div>
+          <div className="muted">Lost / Sold</div>
           <div className="kpi-num">{ctx.kpi.lost}</div>
         </button>
         <button className={`m-card m-pipe card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">

@@ -6,7 +6,7 @@ export const DESK_STATUSES = [
   { label: 'Call Now', dot: 'rgb(76,152,253)' },
   { label: 'Booked', dot: 'rgb(79,80,127)' },
   { label: 'Deal Won', dot: 'rgb(113,221,140)' },
-  { label: 'Deal Lost', dot: 'rgb(255,71,71)' },
+  { label: 'Lost / Sold', dot: 'rgb(255,71,71)' },
   { label: 'Not Interested', dot: 'rgba(0,0,0,0.2)' },
   { label: 'Opted Out', dot: 'rgba(0,0,0,0.2)' },
   { label: 'Review', dot: 'rgb(184,153,235)' },
@@ -14,9 +14,11 @@ export const DESK_STATUSES = [
 
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
 STATUS_DOT.Callback = STATUS_DOT['Call Now'];
+STATUS_DOT['Deal Lost'] = STATUS_DOT['Lost / Sold'];
 
 export function stageLabel(stage) {
   if (stage === 'Callback') return 'Call Now';
+  if (stage === 'Deal Lost') return 'Lost / Sold';
   return stage;
 }
 
@@ -283,7 +285,7 @@ export function buildFlow(counts, activeStage) {
     [
       { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, opportunities), c: 'rgb(79,80,127)' },
       { k: 'callback', label: 'Call Now', v: callback, pct: pct(callback, opportunities), c: 'rgb(76,152,253)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, opportunities), c: 'rgb(255,71,71)' },
+      { k: 'lost', label: 'Lost / Sold', v: lost, pct: pct(lost, opportunities), c: 'rgb(255,71,71)' },
       { k: 'won', label: 'Deal won', v: won, pct: pct(won, opportunities), c: 'rgb(113,221,140)' },
     ],
   ]

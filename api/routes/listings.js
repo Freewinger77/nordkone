@@ -875,6 +875,7 @@ function deskStatusToListingStatus(deskStatus) {
     Booked: 'interested',
     'Deal Won': 'interested',
     'Deal Lost': 'sold',
+    'Lost / Sold': 'sold',
     'Not Interested': 'not_interested',
     'Opted Out': 'opted_out',
     Review: 'needs_human',

@@ -6,6 +6,7 @@ const DESK_LABELS = new Set([
   'Booked',
   'Deal Won',
   'Deal Lost',
+  'Lost / Sold',
   'Not Interested',
   'Opted Out',
   'Review',
@@ -144,6 +145,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     !(THIN_DESK_LABELS.has(desk) && !deep && !bookedSignal);
   if (deskWins && desk === 'Interested' && deep && !bookedSignal) stage = 'Callback';
   else if (deskWins && desk === 'Call Now') stage = 'Callback';
+  else if (deskWins && desk === 'Lost / Sold') stage = 'Deal Lost';
   else if (deskWins) stage = desk;
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
@@ -246,7 +248,7 @@ export const FLOW_FILTERS = {
   opportunities: { label: 'Opportunities', test: (lead) => matchesFlowFilter(lead, 'opportunities') },
   booked: { label: 'Booked', test: (lead) => matchesFlowFilter(lead, 'booked') },
   callback: { label: 'Call Now', test: (lead) => matchesFlowFilter(lead, 'callback') },
-  lost: { label: 'Deal lost', test: (lead) => matchesFlowFilter(lead, 'lost') },
+  lost: { label: 'Lost / Sold', test: (lead) => matchesFlowFilter(lead, 'lost') },
   notint: { label: 'Not interested', test: (lead) => matchesFlowFilter(lead, 'notint') },
   review: { label: 'Review', test: (lead) => matchesFlowFilter(lead, 'review') },
   awaitReply: { label: 'Awaiting reply', test: (lead) => matchesFlowFilter(lead, 'awaitReply') },

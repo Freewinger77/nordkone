@@ -299,6 +299,19 @@ if (callNowDesk.stage !== 'Callback' || !callNowDesk.callback) {
   failed += 1;
 }
 
+const lostSoldDesk = lead({
+  listing: { nettikone_id: 'lost-sold-desk', desk_status: 'Lost / Sold' },
+  conversation: {
+    last_inbound_at: '2026-08-29',
+    inbound_count: 2,
+    calendar_booking: { event_id: 'keep-lost-sold', start: '2026-08-30T10:00:00.000Z', status: 'booked' },
+  },
+});
+if (lostSoldDesk.stage !== 'Deal Lost' || !lostSoldDesk.lost) {
+  console.error('persisted Lost / Sold should stay Deal Lost', lostSoldDesk);
+  failed += 1;
+}
+
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);

@@ -3,7 +3,7 @@ import { reconcileLead } from '../../../shared/reconcile.js';
 export const DESK_STATUSES = [
   { label: 'Interested', dot: 'rgb(113,221,140)' },
   { label: 'No Answer', dot: 'rgb(255,204,0)' },
-  { label: 'Callback', dot: 'rgb(76,152,253)' },
+  { label: 'Call Now', dot: 'rgb(76,152,253)' },
   { label: 'Booked', dot: 'rgb(79,80,127)' },
   { label: 'Deal Won', dot: 'rgb(113,221,140)' },
   { label: 'Deal Lost', dot: 'rgb(255,71,71)' },
@@ -13,6 +13,12 @@ export const DESK_STATUSES = [
 ];
 
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
+STATUS_DOT.Callback = STATUS_DOT['Call Now'];
+
+export function stageLabel(stage) {
+  if (stage === 'Callback') return 'Call Now';
+  return stage;
+}
 
 export const QUEUE_KEY = 'nordkone-work-queue-v2';
 
@@ -193,7 +199,7 @@ export function buildWeek(offset, calls = [], callbacks = []) {
   const callbackCount = days.reduce((sum, day) => sum + day.events.filter((event) => event.kind === 'callback').length, 0);
   const parts = [];
   if (bookedCount) parts.push(bookedCount === 1 ? '1 booked' : `${bookedCount} booked`);
-  if (callbackCount) parts.push(callbackCount === 1 ? '1 callback' : `${callbackCount} callbacks`);
+  if (callbackCount) parts.push(callbackCount === 1 ? '1 Call Now' : `${callbackCount} Call Now`);
   return {
     label,
     count: parts.join(' · ') || 'No calls this week',
@@ -276,7 +282,7 @@ export function buildFlow(counts, activeStage) {
     ],
     [
       { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, opportunities), c: 'rgb(79,80,127)' },
-      { k: 'callback', label: 'Callback', v: callback, pct: pct(callback, opportunities), c: 'rgb(76,152,253)' },
+      { k: 'callback', label: 'Call Now', v: callback, pct: pct(callback, opportunities), c: 'rgb(76,152,253)' },
       { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, opportunities), c: 'rgb(255,71,71)' },
       { k: 'won', label: 'Deal won', v: won, pct: pct(won, opportunities), c: 'rgb(113,221,140)' },
     ],

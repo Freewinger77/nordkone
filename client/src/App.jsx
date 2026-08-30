@@ -24,6 +24,7 @@ import {
   relativeAgo,
   saveJson,
   smooth,
+  stageLabel,
   statusDot,
   statusWash,
   weekdayReplySeries,
@@ -287,7 +288,7 @@ function App() {
     try {
       await apiSend('/api/leads/status', {
         method: 'PATCH',
-        body: { nettikone_id: lead.listingId, desk_status: deskStatus },
+        body: { nettikone_id: lead.listingId, desk_status: deskStatus === 'Call Now' ? 'Callback' : deskStatus },
       });
       await load();
     } catch (statusError) {
@@ -725,7 +726,7 @@ function CalendarPage({ ctx }) {
             <div className="day-body">
               {day.events.map((event) => (
                 <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.kind === 'callback' ? 'Callback' : event.at}</strong>
+                  <strong>{event.kind === 'callback' ? 'Call Now' : event.at}</strong>
                   <p>{event.machine}</p>
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
@@ -911,7 +912,7 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             <div className={compact ? '' : 'col-status'} style={compact ? { width: 150, flexShrink: 0 } : undefined}>
               <div className="status-line">
                 <span className="dot" style={{ background: statusDot(row.stage) }} />
-                <span>{row.stage}</span>
+                <span>{stageLabel(row.stage)}</span>
               </div>
               {!compact && ctx.queue.includes(row.id) ? (
                 <button className="q-chip" onClick={(event) => ctx.toggleQueue(row.id, event)} type="button">
@@ -981,14 +982,14 @@ function LeadDrawer({ ctx }) {
             <div className="rel">
               <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ background: statusWash(lead.stage) }} type="button">
                 <span className="dot" style={{ background: statusDot(lead.stage) }} />
-                {lead.stage} ▾
+                {stageLabel(lead.stage)} ▾
               </button>
               {ctx.menuFor === 'lead' ? (
                 <div className="menu wide">
                   {DESK_STATUSES.map((option) => (
                     <button className="menu-item" key={option.label} onClick={() => ctx.setDeskStatus(lead, option.label)} type="button">
                       <span className="dot" style={{ background: option.dot }} />
-                      <span style={{ fontWeight: option.label === lead.stage ? 600 : 400 }}>{option.label}</span>
+                      <span style={{ fontWeight: option.label === stageLabel(lead.stage) ? 600 : 400 }}>{option.label}</span>
                     </button>
                   ))}
                 </div>
@@ -1097,7 +1098,7 @@ function LeadSheet({ ctx }) {
         <div className="rel" style={{ marginTop: 12 }}>
           <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40, background: statusWash(lead.stage) }} type="button">
             <span className="dot" style={{ background: statusDot(lead.stage), width: 8, height: 8 }} />
-            {lead.stage} ▾
+            {stageLabel(lead.stage)} ▾
           </button>
           {ctx.menuFor === 'lead' ? (
             <div className="menu narrow">
@@ -1299,7 +1300,7 @@ function MobileCalendar({ ctx }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {day.events.map((event) => (
                 <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.kind === 'callback' ? 'Callback' : event.at}</strong>
+                  <strong>{event.kind === 'callback' ? 'Call Now' : event.at}</strong>
                   <p>{event.machine}</p>
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
@@ -1371,7 +1372,7 @@ function MobileLeadCard({ ctx, row, source }) {
       </div>
       <div className="m-lead-foot">
         <span className="dot" style={{ background: statusDot(row.stage) }} />
-        <span className="m-lead-stage">{row.stage}</span>
+        <span className="m-lead-stage">{stageLabel(row.stage)}</span>
         <span className="grow" />
         <span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span>
         <span className="m-lead-ago">{row.ago}</span>

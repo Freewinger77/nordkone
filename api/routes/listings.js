@@ -871,6 +871,7 @@ function deskStatusToListingStatus(deskStatus) {
     Interested: 'interested',
     'No Answer': 'contacted',
     Callback: 'replied',
+    'Call Now': 'replied',
     Booked: 'interested',
     'Deal Won': 'interested',
     'Deal Lost': 'sold',

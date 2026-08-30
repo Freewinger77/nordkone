@@ -2,6 +2,7 @@ const DESK_LABELS = new Set([
   'Interested',
   'No Answer',
   'Callback',
+  'Call Now',
   'Booked',
   'Deal Won',
   'Deal Lost',
@@ -11,8 +12,8 @@ const DESK_LABELS = new Set([
   'Replied',
 ]);
 
-const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Interested', 'Replied']);
-const THIN_DESK_LABELS = new Set(['Callback', 'Interested']);
+const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Call Now', 'Interested', 'Replied']);
+const THIN_DESK_LABELS = new Set(['Callback', 'Call Now', 'Interested']);
 
 const STALE_BOOKING_MS = 14 * 24 * 60 * 60 * 1000;
 const CALLBACK_MESSAGE_MIN = 5;
@@ -142,6 +143,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     !(bookedSignal && SOFT_DESK_LABELS.has(desk)) &&
     !(THIN_DESK_LABELS.has(desk) && !deep && !bookedSignal);
   if (deskWins && desk === 'Interested' && deep && !bookedSignal) stage = 'Callback';
+  else if (deskWins && desk === 'Call Now') stage = 'Callback';
   else if (deskWins) stage = desk;
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
@@ -243,7 +245,7 @@ export const FLOW_FILTERS = {
   noreply: { label: 'No reply', test: (lead) => matchesFlowFilter(lead, 'noreply') },
   opportunities: { label: 'Opportunities', test: (lead) => matchesFlowFilter(lead, 'opportunities') },
   booked: { label: 'Booked', test: (lead) => matchesFlowFilter(lead, 'booked') },
-  callback: { label: 'Callback', test: (lead) => matchesFlowFilter(lead, 'callback') },
+  callback: { label: 'Call Now', test: (lead) => matchesFlowFilter(lead, 'callback') },
   lost: { label: 'Deal lost', test: (lead) => matchesFlowFilter(lead, 'lost') },
   notint: { label: 'Not interested', test: (lead) => matchesFlowFilter(lead, 'notint') },
   review: { label: 'Review', test: (lead) => matchesFlowFilter(lead, 'review') },

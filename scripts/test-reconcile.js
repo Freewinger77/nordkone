@@ -286,6 +286,19 @@ if (prunedCallback.stage !== 'Replied' || prunedCallback.callback) {
   failed += 1;
 }
 
+const callNowDesk = lead({
+  listing: { nettikone_id: 'call-now-desk', desk_status: 'Call Now' },
+  conversation: {
+    last_inbound_at: '2026-08-29',
+    inbound_count: 3,
+    messages: thread(6),
+  },
+});
+if (callNowDesk.stage !== 'Callback' || !callNowDesk.callback) {
+  console.error('persisted Call Now should stay the Callback stage', callNowDesk);
+  failed += 1;
+}
+
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);

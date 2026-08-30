@@ -114,8 +114,8 @@ if (!week.days.some((day) => day.events.some((event) => event.kind === 'callback
   console.error('callback signal should land on its Helsinki day', week);
   failed += 1;
 }
-if (week.days.flatMap((day) => day.events).some((event) => event.kind === 'booked') === false && !week.count.includes('callback')) {
-  console.error('week label should mention callbacks', week.count);
+if (week.days.flatMap((day) => day.events).some((event) => event.kind === 'booked') === false && !week.count.includes('Call Now')) {
+  console.error('week label should mention Call Now', week.count);
   failed += 1;
 }
 

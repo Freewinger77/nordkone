@@ -675,7 +675,15 @@ button, input, textarea, select { font: inherit; }
 }
 .event:hover { background: rgba(0, 0, 0, 0.04); }
 .event strong { display: block; font-size: 12px; line-height: 16px; }
-.event p { margin: 2px 0 0; font-size: 14px; line-height: 20px; text-wrap: pretty; }
+.event p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 .event small { display: block; margin-top: 4px; font-size: 10px; line-height: 14px; color: rgba(0, 0, 0, 0.4); }
 .event-callback {
   padding: 6px 8px;
@@ -691,7 +699,7 @@ button, input, textarea, select { font: inherit; }
   text-transform: uppercase;
   color: rgb(76, 152, 253);
 }
-.event-callback p { font-size: 12px; line-height: 16px; }
+.event-callback p { font-size: 12px; line-height: 16px; max-height: 32px; }
 
 .empty-soft { font-size: 12px; line-height: 16px; color: rgba(0, 0, 0, 0.2); }
 

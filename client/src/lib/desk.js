@@ -272,15 +272,17 @@ export function buildFlow(counts, activeStage) {
     ['replied', 'notint', notint],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 
-  const x = [16, 290, 560, 830];
-  const bw = 12;
-  const top = 18;
-  const height = 360;
-  const gap = 28;
+  const vw = 1100;
+  const bw = 16;
+  const labelRoom = 208;
+  const left = 10;
+  const lastX = vw - labelRoom;
+  const x = cols.map((_, index) => Math.round(left + ((lastX - left) * index) / Math.max(cols.length - 1, 1)));
+  const top = 6;
+  const height = 300;
+  const gap = 16;
   const unit = height / scale;
-  const vw = 1120;
-  const vh = 460;
-  const lmin = 52;
+  const lmin = 44;
   const map = {};
   const nodes = [];
 
@@ -289,7 +291,7 @@ export function buildFlow(counts, activeStage) {
     let y = lastCol ? map.replied.y : top;
     let prevC = lastCol ? map.replied.y - lmin : -999;
     col.forEach((n) => {
-      const h = Math.max(n.v * unit, 8);
+      const h = Math.max(n.v * unit, 10);
       let lc = y + h / 2;
       if (lc - prevC < lmin) lc = prevC + lmin;
       prevC = lc;
@@ -303,8 +305,8 @@ export function buildFlow(counts, activeStage) {
         count: `${n.v} (${n.pct})`,
         c: n.c,
         lfg: activeStage === n.k ? 'rgb(79,80,127)' : 'rgb(0,0,0)',
-        left: `${((x[ci] + bw + 12) / vw) * 100}%`,
-        top: `${(lc / vh) * 100}%`,
+        left: `${((x[ci] + bw + 14) / vw) * 100}%`,
+        lc,
         outCur: y,
         inCur: y,
       };
@@ -313,6 +315,11 @@ export function buildFlow(counts, activeStage) {
       y += h + gap;
     });
   });
+
+  const vh = Math.max(...nodes.map((node) => node.y + node.h), 140) + 18;
+  for (const node of nodes) {
+    node.top = `${(node.lc / vh) * 100}%`;
+  }
 
   const links = linksSpec.filter(([a, b]) => map[a] && map[b]).map(([a, b, v]) => {
     const s = map[a];

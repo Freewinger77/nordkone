@@ -590,24 +590,21 @@ function Overview({ ctx }) {
         <button className={`card card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
           <div className="kpi-head">
             <span className="card-title">Calls booked</span>
-          </div>
-          <div className="kpi-mid">
-            <svg viewBox="0 0 260 56" width="100%" height="40" preserveAspectRatio="none">
-              <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 56, 6)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-            </svg>
+            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
           </div>
           <div className="kpi-row">
             <span className="kpi-num">{ctx.kpi.booked}</span>
-            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
+            <svg className="kpi-spark" viewBox="0 0 260 36" preserveAspectRatio="none">
+              <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 36, 4)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            </svg>
           </div>
-          <div className="muted kpi-sub">active calendar bookings</div>
+          <div className="muted kpi-sub">Live calendar bookings</div>
         </button>
         <button className={`card card-btn rise-in ${ctx.stage === 'callback' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('callback')} type="button">
           <div className="kpi-head">
             <span className="dot live" />
             <span className="card-title">Opportunities</span>
           </div>
-          <div className="kpi-mid" />
           <div className="kpi-num">{ctx.kpi.opps}</div>
           <div className="muted kpi-sub">{ctx.kpi.oppPct}</div>
         </button>
@@ -616,7 +613,6 @@ function Overview({ ctx }) {
             <span className="dot" style={{ background: 'rgb(113, 221, 140)' }} />
             <span className="card-title">Deal won</span>
           </div>
-          <div className="kpi-mid" />
           <div className="kpi-num">{ctx.kpi.won}</div>
           <div className="muted kpi-sub">{ctx.kpi.wonPct}</div>
         </button>
@@ -625,7 +621,6 @@ function Overview({ ctx }) {
             <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
             <span className="card-title">Deal lost</span>
           </div>
-          <div className="kpi-mid" />
           <div className="kpi-num">{ctx.kpi.lost}</div>
           <div className="muted kpi-sub">{ctx.kpi.lostPct}</div>
         </button>
@@ -634,7 +629,6 @@ function Overview({ ctx }) {
             <span className="card-title">Pipeline</span>
             <span className="kpi-chip">5%</span>
           </div>
-          <div className="kpi-mid" />
           <div className="kpi-num">{ctx.kpi.commission}</div>
           <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
         </button>
@@ -644,16 +638,17 @@ function Overview({ ctx }) {
         <article className="card flow-card rise-in">
           <div className="wrap">
             <span className="card-title">Campaign flow</span>
-            <span className="muted" style={{ flex: 1 }}>{scrapedCount(ctx.summary)} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
-            <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
+            <span className="muted">{scrapedCount(ctx.summary)} scraped · {ctx.summary?.eligible || 0} not messaged</span>
+            <span className="grow" />
+            <span className="muted">Click a stage to filter</span>
           </div>
           <div className="flow-wrap">
-            <svg viewBox={`0 0 ${ctx.flow.vw || 1120} ${ctx.flow.vh || 460}`} width="100%" height="320" preserveAspectRatio="xMinYMid meet" style={{ display: 'block', height: 320 }}>
+            <svg className="flow-svg" viewBox={`0 0 ${ctx.flow.vw || 1100} ${ctx.flow.vh || 340}`} preserveAspectRatio="xMidYMid meet" style={{ aspectRatio: `${ctx.flow.vw || 1100} / ${ctx.flow.vh || 340}` }}>
               {ctx.flow.links.map((link) => (
-                <path d={link.d} fill="rgba(0,0,0,0.05)" key={`${link.from}-${link.to}`} />
+                <path d={link.d} fill="rgba(0,0,0,0.09)" key={`${link.from}-${link.to}`} />
               ))}
               {ctx.flow.nodes.map((node) => (
-                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="4" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
+                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="5" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
               ))}
             </svg>
             {ctx.flow.nodes.map((node) => (
@@ -663,24 +658,24 @@ function Overview({ ctx }) {
               </div>
             ))}
           </div>
-          <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
         </article>
 
         <article className="card reply-card rise-in">
-          <div className="wrap">
-            <span className="card-title">Reply timing</span>
-            <span className="muted">{ctx.replyTotal} replies this week</span>
+          <div className="reply-head">
+            <div className="wrap">
+              <span className="card-title">Reply timing</span>
+              <span className="muted">{ctx.replyTotal} this week · {ctx.afterShare}% after hours</span>
+            </div>
+            <div className="legend">
+              <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(0,0,0)' }} />Office {ctx.replies.office.reduce((a, b) => a + b, 0)}</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
+            </div>
           </div>
-          <div className="legend">
-            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(0,0,0)' }} />Office hours {ctx.replies.office.reduce((a, b) => a + b, 0)}</div>
-            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
-          </div>
-          <svg viewBox="0 0 420 190" width="100%" style={{ display: 'block', marginTop: 8, flex: 1 }}>
-            <path className="line-draw" d={smooth(ctx.replies.office, 420, 190, 14)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
-            <path className="line-draw" d={smooth(ctx.replies.after, 420, 190, 14)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
+          <svg className="reply-svg" viewBox="0 0 640 96" preserveAspectRatio="none">
+            <path className="line-draw" d={smooth(ctx.replies.office, 640, 96, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
+            <path className="line-draw" d={smooth(ctx.replies.after, 640, 96, 8)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
           </svg>
           <div className="weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
-          <div className="muted" style={{ marginTop: 12 }}>{ctx.afterShare}% of replies arrive outside office hours.</div>
         </article>
       </div>
 
@@ -1497,7 +1492,7 @@ function OverviewSkeleton({ mobile = false }) {
         {['90', '110', '80', '80', '70'].map((width, index) => (
           <div className="card skel-card" key={width + index} style={{ animationDelay: `${40 + index * 70}ms` }}>
             <div className="skel skel-line" style={{ width: Number(width) }} />
-            <div className="skel skel-num" style={{ marginTop: 28 }} />
+            <div className="skel skel-num" style={{ marginTop: 10 }} />
             <div className="skel skel-line" style={{ width: 96, marginTop: 10 }} />
           </div>
         ))}

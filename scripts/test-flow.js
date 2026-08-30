@@ -58,9 +58,18 @@ if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link
   failed += 1;
 }
 
+const messaged = flow.nodes.find((node) => node.k === 'messaged');
 const replied = flow.nodes.find((node) => node.k === 'replied');
 const callback = flow.nodes.find((node) => node.k === 'callback');
 const lost = flow.nodes.find((node) => node.k === 'lost');
+if (callback.x < flow.vw * 0.55) {
+  console.error('last column should sit on the right of the card', { x: callback.x, vw: flow.vw });
+  failed += 1;
+}
+if (replied.x - messaged.x < 200) {
+  console.error('columns are bunched too tightly', { messaged: messaged.x, replied: replied.x });
+  failed += 1;
+}
 if (callback.y + 1 < replied.y) {
   console.error('Callback sits above Replied', { callback: callback.y, replied: replied.y });
   failed += 1;

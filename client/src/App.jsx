@@ -671,9 +671,9 @@ function Overview({ ctx }) {
               <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
             </div>
           </div>
-          <svg className="reply-svg" viewBox="0 0 640 96" preserveAspectRatio="none">
-            <path className="line-draw" d={smooth(ctx.replies.office, 640, 96, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
-            <path className="line-draw" d={smooth(ctx.replies.after, 640, 96, 8)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
+          <svg className="reply-svg" viewBox="0 0 320 160" preserveAspectRatio="none">
+            <path className="line-draw" d={smooth(ctx.replies.office, 320, 160, 10)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
+            <path className="line-draw" d={smooth(ctx.replies.after, 320, 160, 10)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
           </svg>
           <div className="weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
         </article>

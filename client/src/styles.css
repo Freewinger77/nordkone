@@ -351,12 +351,16 @@ button, input, textarea, select { font: inherit; }
 }
 .flow-label {
   position: absolute;
-  width: 200px;
+  width: max-content;
+  max-width: 220px;
+  padding: 4px 6px;
   display: flex;
   align-items: baseline;
   gap: 6px;
   cursor: pointer;
   transform: translateY(-50%);
+  user-select: none;
+  z-index: 1;
 }
 .flow-label strong {
   display: inline;

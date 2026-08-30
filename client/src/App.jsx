@@ -441,7 +441,7 @@ function App() {
       setMenuFor(null);
     },
     pickStage: (key) => {
-      setStage(key === stage ? null : key);
+      setStage(key);
       setPage(1);
       setView('overview');
       requestAnimationFrame(() => {
@@ -661,14 +661,42 @@ function Overview({ ctx }) {
           <div className="flow-wrap">
             <svg className="flow-svg" viewBox={`0 0 ${ctx.flow.vw || 1100} ${ctx.flow.vh || 340}`} preserveAspectRatio="xMidYMid meet" style={{ aspectRatio: `${ctx.flow.vw || 1100} / ${ctx.flow.vh || 340}` }}>
               {ctx.flow.links.map((link) => (
-                <path d={link.d} fill="rgba(0,0,0,0.09)" key={`${link.from}-${link.to}`} />
+                <path
+                  d={link.d}
+                  fill="rgba(0,0,0,0.09)"
+                  key={`${link.from}-${link.to}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    ctx.pickStage(link.to);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
               ))}
               {ctx.flow.nodes.map((node) => (
-                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="5" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
+                <g
+                  key={node.k}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    ctx.pickStage(node.k);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <rect fill="transparent" height={node.h + 16} width={node.w + 28} x={node.x - 14} y={node.y - 8} />
+                  <rect
+                    fill={node.c}
+                    height={node.h}
+                    rx="5"
+                    stroke={ctx.stage === node.k ? 'rgb(0,0,0)' : 'none'}
+                    strokeWidth={ctx.stage === node.k ? 2 : 0}
+                    width={node.w}
+                    x={node.x}
+                    y={node.y}
+                  />
+                </g>
               ))}
             </svg>
             {ctx.flow.nodes.map((node) => (
-              <div className="flow-label" key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
+              <div className={`flow-label${ctx.stage === node.k ? ' is-on' : ''}`} key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
                 <strong style={{ color: node.lfg }}>{node.label}</strong>
                 <span>{node.count}</span>
               </div>

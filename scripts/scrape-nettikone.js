@@ -39,7 +39,12 @@ export async function runScrape(options = {}) {
   const postedBy = options.postedBy || options['posted-by'] || DEFAULT_POSTED_BY;
   const startUrl = options.url || buildSearchUrl({ category, postedBy, page: 1 });
   const supabase = !dryRun && hasSupabaseConfig() ? createSupabase() : null;
+  const knownIds = supabase && !refreshExisting ? await loadKnownListingIds(supabase) : new Set();
+  const budgetMs = positiveNumber(options.maxMs || options.max_ms, 0);
+  const startedAt = Date.now();
+  const budgetLeft = () => (budgetMs ? budgetMs - (Date.now() - startedAt) : Number.POSITIVE_INFINITY);
   const seenUrls = new Set();
+  let knownPageStreak = 0;
   const stats = {
     target_new_leads: targetNewLeads,
     max_pages: maxPages,
@@ -59,12 +64,18 @@ export async function runScrape(options = {}) {
   };
 
   for (let page = 1; page <= maxPages; page += 1) {
+    if (budgetLeft() < 4000) {
+      stats.stop_reason = 'time_budget';
+      break;
+    }
+
     const listingUrls = await discoverListingUrlsForPage({
       page,
       category,
       postedBy,
       startUrl,
       hasCustomUrl: Boolean(options.url),
+      timeoutMs: Math.min(12000, Math.max(budgetLeft() - 2000, 3000)),
     });
     stats.pages_scanned += 1;
 
@@ -73,10 +84,25 @@ export async function runScrape(options = {}) {
       break;
     }
 
-    for (const url of listingUrls) {
-      if (seenUrls.has(url)) continue;
-      seenUrls.add(url);
-      stats.discovered += 1;
+    const pagePlan = splitFreshListingUrls(listingUrls, knownIds, seenUrls, refreshExisting);
+    stats.discovered += pagePlan.discovered;
+    stats.existing_listings += pagePlan.existing;
+
+    if (!pagePlan.fresh.length) {
+      knownPageStreak += 1;
+      if (knownPageStreak >= 3) {
+        stats.stop_reason = 'caught_up';
+        break;
+      }
+      continue;
+    }
+    knownPageStreak = 0;
+
+    for (const url of pagePlan.fresh) {
+      if (budgetLeft() < 5000) {
+        stats.stop_reason = 'time_budget';
+        break;
+      }
 
       if (stats.processed >= maxListings) {
         stats.stop_reason = 'max_listings_reached';
@@ -89,12 +115,17 @@ export async function runScrape(options = {}) {
 
         if (existing && !refreshExisting) {
           stats.existing_listings += 1;
+          if (nettikoneId) knownIds.add(nettikoneId);
           continue;
         }
 
-        await sleep(REQUEST_DELAY_MS);
-        const listing = await scrapeListing(url, { category });
+        await sleep(Math.min(REQUEST_DELAY_MS, Math.max(budgetLeft() - 4000, 150)));
+        const listing = await scrapeListing(url, {
+          category,
+          timeoutMs: Math.min(12000, Math.max(budgetLeft() - 2000, 3000)),
+        });
         stats.processed += 1;
+        if (listing.nettikone_id) knownIds.add(listing.nettikone_id);
 
         if (!listing.normalized_phone) {
           stats.skipped += 1;
@@ -123,7 +154,6 @@ export async function runScrape(options = {}) {
     }
 
     if (stats.stop_reason) break;
-    await sleep(REQUEST_DELAY_MS);
   }
 
   if (!stats.stop_reason) {
@@ -157,7 +187,27 @@ async function discoverListingUrls({ pages, category, postedBy, startUrl, hasCus
   return [...urls];
 }
 
-async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, hasCustomUrl }) {
+export function splitFreshListingUrls(urls, knownIds, seenUrls, refreshExisting = false) {
+  const fresh = [];
+  let existing = 0;
+  let discovered = 0;
+
+  for (const url of urls) {
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    discovered += 1;
+    const id = extractNettikoneId(url);
+    if (id && knownIds.has(id) && !refreshExisting) {
+      existing += 1;
+      continue;
+    }
+    fresh.push(url);
+  }
+
+  return { fresh, existing, discovered };
+}
+
+async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, hasCustomUrl, timeoutMs }) {
   const urls = new Set();
   const rootUrl = new URL(startUrl, BASE_URL);
   const pageUrl = hasCustomUrl
@@ -167,7 +217,7 @@ async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, 
     : buildSearchUrl({ category, postedBy, page });
 
   console.log(`Discovering ${pageUrl}`);
-  const html = await fetchText(pageUrl);
+  const html = await fetchText(pageUrl, 0, timeoutMs);
   const $ = cheerio.load(html);
 
   $('a[href]').each((_, link) => {
@@ -179,8 +229,8 @@ async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, 
   return [...urls];
 }
 
-async function scrapeListing(url, { category }) {
-  const html = await fetchText(url);
+async function scrapeListing(url, { category, timeoutMs }) {
+  const html = await fetchText(url, 0, timeoutMs);
   const $ = cheerio.load(html);
   const canonicalUrl = $('link[rel="canonical"]').attr('href') || url;
   const nettikoneId = extractNettikoneId(canonicalUrl) || extractNettikoneId(url);
@@ -296,6 +346,28 @@ async function upsertSellerProspect(supabase, listing) {
 
   if (error) throw error;
   return { row: data, isNew: true };
+}
+
+async function loadKnownListingIds(supabase) {
+  const ids = new Set();
+  let from = 0;
+
+  while (from < 5000) {
+    const { data, error } = await supabase
+      .from('nordkone_listings')
+      .select('nettikone_id')
+      .eq('client_key', CLIENT_KEY)
+      .range(from, from + 999);
+
+    if (error) throw error;
+    for (const row of data || []) {
+      if (row.nettikone_id) ids.add(String(row.nettikone_id));
+    }
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+
+  return ids;
 }
 
 async function loadExistingListing(supabase, nettikoneId) {
@@ -555,11 +627,12 @@ function withPage(url, page) {
   return next.toString();
 }
 
-async function fetchText(url, redirectCount = 0) {
+async function fetchText(url, redirectCount = 0, timeoutMs = 15000) {
   if (redirectCount > 8) throw new Error(`Too many redirects for ${url}`);
 
   const response = await fetch(url, {
     redirect: 'manual',
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
     headers: {
       'user-agent': USER_AGENT,
       accept: 'text/html,application/xhtml+xml',
@@ -572,7 +645,7 @@ async function fetchText(url, redirectCount = 0) {
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location');
     if (!location) throw new Error(`Redirect without location for ${url}`);
-    return fetchText(new URL(location, url).toString(), redirectCount + 1);
+    return fetchText(new URL(location, url).toString(), redirectCount + 1, timeoutMs);
   }
 
   if (!response.ok) {

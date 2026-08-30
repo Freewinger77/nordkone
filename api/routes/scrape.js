@@ -39,12 +39,15 @@ async function run(req, res) {
   const category = String(req.query.category || req.body?.category || process.env.NETTIKONE_DEFAULT_CATEGORY || 'kaivinkone');
   const postedBy = String(req.query.posted_by || req.query.postedBy || req.body?.postedBy || process.env.NETTIKONE_DEFAULT_POSTED_BY || 'S');
 
+  const maxMs = clamp(Number(req.query.maxMs || req.body?.maxMs || process.env.SCRAPE_MAX_MS || 50000), 8000, 170000);
+
   const stats = await runScrape({
     category,
     postedBy,
     targetNew,
     maxPages,
     maxListings,
+    maxMs,
   });
 
   res.json({
@@ -54,6 +57,7 @@ async function run(req, res) {
     targetNew,
     maxPages,
     maxListings,
+    maxMs,
     stats,
   });
 }

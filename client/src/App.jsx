@@ -274,7 +274,13 @@ function App() {
     try {
       const result = await apiSend('/api/scrape/run?targetNew=10&maxPages=20&maxListings=30', { method: 'POST' });
       const stats = result.stats || {};
-      setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages`);
+      const extra =
+        stats.stop_reason === 'caught_up'
+          ? ' · already up to date'
+          : stats.stop_reason === 'time_budget'
+            ? ' · stopped early, click again'
+            : '';
+      setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages${extra}`);
       await load();
     } catch (scrapeError) {
       setError(scrapeError.message);

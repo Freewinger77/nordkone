@@ -9,7 +9,7 @@ export async function apiGet(path) {
     credentials: 'same-origin',
     headers: API_KEY ? { 'X-API-Key': API_KEY } : {},
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(readApiError(await response.text()));
   return response.json();
 }
 
@@ -23,6 +23,18 @@ export async function apiSend(path, { method = 'POST', body } = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw new Error(readApiError(await response.text()));
   return response.json();
+}
+
+function readApiError(text) {
+  if (/FUNCTION_INVOCATION_TIMEOUT/i.test(text)) {
+    return 'Find new leads timed out. Click again — it now skips listings we already have.';
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.error || parsed.message || text;
+  } catch {
+    return text || 'Request failed';
+  }
 }

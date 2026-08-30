@@ -128,6 +128,87 @@ if (!won?.won || isOpenOpportunity(won) || interested.some((row) => row.id === '
   failed += 1;
 }
 
+const reviewStays = lead({
+  listing: { nettikone_id: 'review-plain', desk_status: 'Review', status: 'needs_human' },
+  conversation: {
+    status: 'needs_human',
+    interest_status: 'unclear',
+    desk_status: 'Review',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+  },
+});
+if (reviewStays.stage !== 'Review') {
+  console.error('Review without a booking should stay Review', reviewStays.stage);
+  failed += 1;
+}
+
+const reviewBooked = lead({
+  listing: { nettikone_id: 'review-booked', desk_status: 'Review', status: 'needs_human' },
+  conversation: {
+    status: 'needs_human',
+    interest_status: 'unclear',
+    desk_status: 'Review',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 2,
+    calendar_booking: {
+      event_id: '1cj313c2g0240j2pbb42c9ho44',
+      start: '2026-08-30T07:00:00.000Z',
+      status: 'booked',
+    },
+  },
+});
+if (reviewBooked.stage !== 'Booked' || !reviewBooked.booked) {
+  console.error('Review + active calendar booking should flip to Booked', reviewBooked);
+  failed += 1;
+}
+
+const lostBooked = lead({
+  listing: { nettikone_id: 'lost-booked', desk_status: 'Deal Lost', status: 'sold' },
+  conversation: {
+    status: 'sold',
+    interest_status: 'sold',
+    desk_status: 'Deal Lost',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    calendar_booking: { event_id: 'keep-lost', start: '2026-08-30T10:00:00.000Z', status: 'booked' },
+  },
+});
+if (lostBooked.stage !== 'Deal Lost') {
+  console.error('Deal Lost should not be overridden by a booking', lostBooked.stage);
+  failed += 1;
+}
+
+const wonBooked = lead({
+  listing: { nettikone_id: 'won-booked', desk_status: 'Deal Won', status: 'interested' },
+  conversation: {
+    status: 'interested',
+    desk_status: 'Deal Won',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    calendar_booking: { event_id: 'keep-won', start: '2026-08-30T11:00:00.000Z', status: 'booked' },
+  },
+});
+if (wonBooked.stage !== 'Deal Won') {
+  console.error('Deal Won should not be overridden by a booking', wonBooked.stage);
+  failed += 1;
+}
+
+const notIntBooked = lead({
+  listing: { nettikone_id: 'notint-booked', desk_status: 'Not Interested', status: 'not_interested' },
+  conversation: {
+    status: 'not_interested',
+    desk_status: 'Not Interested',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    calendar_booking: { event_id: 'keep-notint', start: '2026-08-30T12:00:00.000Z', status: 'booked' },
+  },
+});
+if (notIntBooked.stage !== 'Not Interested') {
+  console.error('Not Interested should not be overridden by a booking', notIntBooked.stage);
+  failed += 1;
+}
+
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);

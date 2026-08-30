@@ -623,7 +623,7 @@ router.post('/calendar-booking', async (req, res) => {
 
   let query = supabase
     .from('campaign_outbound_sessions')
-    .select('id,raw_data')
+    .select('id,raw_data,booked_at,source_customer_id,prospect_id,status')
     .eq('client_key', CLIENT_KEY)
     .eq('source_system', SOURCE_SYSTEM);
 
@@ -637,6 +637,11 @@ router.post('/calendar-booking', async (req, res) => {
   if (!session) return res.status(404).json({ error: 'session not found' });
 
   const rawData = session.raw_data || {};
+  const now = new Date().toISOString();
+  const bookingStatus = String(status || '').toLowerCase();
+  const bookingFailed = ['cancelled', 'canceled', 'declined', 'failed'].includes(bookingStatus);
+  const booked = !bookingFailed && Boolean(event_id || start || link);
+  const bookedAt = session.booked_at || rawData.booked_at || now;
   const nextRawData = {
     ...rawData,
     calendar_booking: {
@@ -653,19 +658,64 @@ router.post('/calendar-booking', async (req, res) => {
       attendee_response: attendee_response || null,
       error: error || null,
       source: raw_event.source || 'wf2',
-      updated_at: new Date().toISOString(),
+      updated_at: now,
       raw_event,
     },
+    ...(booked
+      ? {
+          desk_status: 'Booked',
+          desk_status_updated_at: now,
+          booked_at: bookedAt,
+        }
+      : {}),
   };
+
+  const sessionPatch = {
+    raw_data: nextRawData,
+    updated_at: now,
+  };
+  if (booked) {
+    sessionPatch.booked_at = bookedAt;
+    sessionPatch.status = 'interested';
+    sessionPatch.interest_status = 'interested';
+    sessionPatch.stop_reminders = true;
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from('campaign_outbound_sessions')
-    .update({ raw_data: nextRawData, updated_at: new Date().toISOString() })
+    .update(sessionPatch)
     .eq('id', session.id)
-    .select('id,source_customer_id,raw_data')
+    .select('id,source_customer_id,raw_data,booked_at,status,interest_status')
     .single();
 
   if (updateError) throw updateError;
+
+  const listingId = updated.source_customer_id || sourceCustomerId || session.source_customer_id;
+  if (booked && listingId) {
+    const { data: listing } = await supabase
+      .from('nordkone_listings')
+      .select('id,raw_data')
+      .eq('client_key', CLIENT_KEY)
+      .eq('nettikone_id', listingId)
+      .maybeSingle();
+
+    if (listing?.id) {
+      await supabase
+        .from('nordkone_listings')
+        .update({
+          status: deskStatusToListingStatus('Booked'),
+          raw_data: {
+            ...(listing.raw_data || {}),
+            desk_status: 'Booked',
+            desk_status_updated_at: now,
+          },
+          updated_at: now,
+        })
+        .eq('id', listing.id)
+        .eq('client_key', CLIENT_KEY);
+    }
+  }
+
   res.json({ ok: true, session: updated });
 });
 

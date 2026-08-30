@@ -10,6 +10,8 @@ const DESK_LABELS = new Set([
   'Review',
 ]);
 
+const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Interested']);
+
 const STALE_BOOKING_MS = 14 * 24 * 60 * 60 * 1000;
 
 export function bookingFromRecord(record = {}) {
@@ -119,7 +121,8 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const callbackSignal = derived === 'ready_for_call' || classified === 'needs_human';
 
   let stage;
-  if (desk && DESK_LABELS.has(desk)) stage = desk;
+  const deskWins = desk && DESK_LABELS.has(desk) && !(bookedSignal && SOFT_DESK_LABELS.has(desk));
+  if (deskWins) stage = desk;
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
   else if (notInterested) stage = 'Not Interested';

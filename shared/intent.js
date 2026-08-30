@@ -19,6 +19,10 @@ export function isNeedsReviewReply(message = '') {
   return isWrittenFollowupRequest(text) || CALL_REJECT_RE.test(text);
 }
 
+export function isBrokerageInterestText(message = '') {
+  return /(palkkio|provisio|välityspalkk|välitys\s*%|prosentteina|hinnasto)/i.test(String(message || ''));
+}
+
 export function classifyInbound(message = '') {
   const text = String(message || '').toLowerCase();
 

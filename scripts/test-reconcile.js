@@ -63,7 +63,16 @@ const fixtures = [
   }),
   lead({
     listing: { nettikone_id: 'review', status: 'replied' },
-    conversation: { status: 'replied', interest_status: 'unclear', last_inbound_at: '2026-08-28', inbound_count: 1 },
+    conversation: {
+      status: 'replied',
+      interest_status: 'unclear',
+      last_inbound_at: '2026-08-28',
+      inbound_count: 2,
+      messages: [
+        { direction: 'inbound', classification: 'interested', message: 'Ok. Laita palkkio hinnasto niin katsotaan!' },
+        { direction: 'inbound', classification: 'needs_review', message: 'Ei käy. Laita kirjallisena sähköpostiin kiitos.' },
+      ],
+    },
   }),
   lead({
     listing: { nettikone_id: 'won-1', desk_status: 'Deal Won', status: 'interested' },
@@ -389,8 +398,8 @@ const n8nReview = lead({
     messages: [{ direction: 'inbound', classification: 'needs_review', message: 'Pidetään mielessä' }],
   },
 });
-if (n8nReview.stage !== 'Review') {
-  console.error('needs_review should land as Review', n8nReview);
+if (n8nReview.stage !== 'Replied') {
+  console.error('thin pidetään mielessä should await a reply, not sit in Review', n8nReview);
   failed += 1;
 }
 
@@ -419,8 +428,27 @@ const commissionAsk = lead({
     messages: [{ direction: 'inbound', classification: 'interested', message: 'Mikä on teidän välityspalkkio?' }],
   },
 });
-if (commissionAsk.stage !== 'Replied' || commissionAsk.reviewSignal) {
-  console.error('commission ask should stay interested/Replied, not Review', commissionAsk);
+if (commissionAsk.stage !== 'Callback' || commissionAsk.reviewSignal) {
+  console.error('commission ask should be Call Now, not Review', commissionAsk);
+  failed += 1;
+}
+
+const tarmoWait = lead({
+  listing: { nettikone_id: 'tarmo' },
+  conversation: {
+    status: 'replied',
+    interest_status: 'unclear',
+    last_inbound_at: '2026-07-21',
+    inbound_count: 1,
+    outbound_count: 1,
+    messages: [
+      { direction: 'outbound' },
+      { direction: 'inbound', classification: 'unclear', message: 'Hei on kyllä mutta tänä iltana sitä tullaan katsomaan. Ehkä kaupat syntyy?' },
+    ],
+  },
+});
+if (tarmoWait.stage !== 'Replied' || tarmoWait.reviewSignal) {
+  console.error('incomplete look-today reply should await a reply', tarmoWait);
   failed += 1;
 }
 

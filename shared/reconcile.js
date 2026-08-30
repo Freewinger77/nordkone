@@ -1,4 +1,4 @@
-import { isNeedsReviewReply } from './intent.js';
+import { isBrokerageInterestText, isNeedsReviewReply } from './intent.js';
 
 const DESK_LABELS = new Set([
   'Interested',
@@ -92,7 +92,9 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const derived = norm(conversation.derived_status);
   const classified = latestClassification(conversation);
   const inbound = hasInbound(conversation);
-  const reviewReply = inbound && isNeedsReviewReply(latestInboundText(conversation));
+  const lastInboundText = latestInboundText(conversation);
+  const reviewReply = inbound && isNeedsReviewReply(lastInboundText);
+  const brokerageAsk = inbound && isBrokerageInterestText(lastInboundText);
 
   const booking =
     conversation.calendar_booking ||
@@ -144,7 +146,8 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
       sessionStatus === 'interested' ||
       interest === 'interested' ||
       derived === 'interested' ||
-      classified === 'interested');
+      classified === 'interested' ||
+      brokerageAsk);
   const callbackSignal =
     derived === 'ready_for_call' ||
     classified === 'ready_for_call' ||
@@ -167,10 +170,18 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   else if (sold) stage = 'Deal Lost';
   else if (notInterested) stage = 'Not Interested';
   else if (bookedSignal || classified === 'booked') stage = 'Booked';
-  else if (callbackSignal) stage = 'Callback';
-  else if (reviewReply || classified === 'needs_review' || derived === 'needs_review') stage = 'Review';
+  else if (callbackSignal || brokerageAsk) stage = 'Callback';
+  else if (reviewReply) stage = 'Review';
+  else if (
+    (classified === 'needs_review' || derived === 'needs_review') &&
+    (deep || conversationDepth(conversation) > 3)
+  ) {
+    stage = 'Review';
+  }
   else if (inbound && deep && callbackIntent) stage = 'Callback';
-  else if (inbound && (classified === 'unclear' || classified === 'needs_human') && !interestedSignal) stage = 'Review';
+  else if (inbound && (classified === 'unclear' || classified === 'needs_human') && !interestedSignal && deep) {
+    stage = 'Review';
+  }
   else if (inbound) stage = 'Replied';
   else stage = 'No Answer';
 

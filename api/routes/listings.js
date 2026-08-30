@@ -3,6 +3,7 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
+import { isNeedsReviewReply } from '../../shared/intent.js';
 
 const router = Router();
 
@@ -983,25 +984,29 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   const interest = session?.interest_status || listing?.interest_status || '';
   const booking = extractCalendarMetadata(events[events.length - 1] || {}, session || {}) || bookingFromRecord(session || {});
 
+  const latest = events[events.length - 1] || {};
+  const latestInbound = latest.message || '';
+  const latestText = `${latestInbound} ${latest.raw_event?.reply_message || ''}`;
+  const reviewReply = Boolean(latestInbound && isNeedsReviewReply(latestInbound));
+
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';
-  if (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested') {
+  if (
+    !reviewReply &&
+    (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested')
+  ) {
     return 'not_interested';
   }
   if (isActiveBooking(booking)) return 'booked';
+  if (reviewReply) return 'needs_review';
   if (listingStatus === 'interested' || sessionStatus === 'interested' || interest === 'interested') {
-    const latestText = events.length
-      ? `${events[events.length - 1].message || ''} ${events[events.length - 1].raw_event?.reply_message || ''}`
-      : '';
     if (isReadyForCallText(latestText)) return 'ready_for_call';
     return 'interested';
   }
   if (!session && listingStatus === 'eligible') return 'ready_to_contact';
   if (!events.length) return session ? (session.last_inbound_at ? 'needs_review' : 'contacted') : listingStatus || 'ready_to_contact';
 
-  const latest = events[events.length - 1];
   const fullText = events.map((event) => `${event.message || ''} ${event.raw_event?.reply_message || ''}`).join(' ');
-  const latestText = `${latest.message || ''} ${latest.raw_event?.reply_message || ''}`;
 
   if (containsAny(fullText, ['myyty', 'meni jo', 'kaupat tehty', 'ei ole enää']) || events.some((event) => event.classification === 'sold')) {
     return 'sold';

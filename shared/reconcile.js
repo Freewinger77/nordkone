@@ -1,3 +1,5 @@
+import { isNeedsReviewReply } from './intent.js';
+
 const DESK_LABELS = new Set([
   'Interested',
   'No Answer',
@@ -67,10 +69,19 @@ export function isDeepConversation(conversation = {}) {
   return conversationDepth(conversation) >= CALLBACK_MESSAGE_MIN;
 }
 
-function latestClassification(conversation = {}) {
+function latestInbound(conversation = {}) {
   const inbound = (conversation.messages || []).filter((message) => message.direction === 'inbound');
-  const last = inbound.at(-1);
-  return norm(last?.classification || conversation.interest_status);
+  return inbound.at(-1) || {};
+}
+
+function latestClassification(conversation = {}) {
+  const last = latestInbound(conversation);
+  return norm(last.classification || conversation.interest_status);
+}
+
+function latestInboundText(conversation = {}) {
+  const last = latestInbound(conversation);
+  return last.message || last.text || last.body || '';
 }
 
 export function reconcileLead({ listing = {}, conversation = {}, calendarCalls = [], now = Date.now() } = {}) {
@@ -81,6 +92,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const derived = norm(conversation.derived_status);
   const classified = latestClassification(conversation);
   const inbound = hasInbound(conversation);
+  const reviewReply = inbound && isNeedsReviewReply(latestInboundText(conversation));
 
   const booking =
     conversation.calendar_booking ||
@@ -118,11 +130,12 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     derived === 'opt_out' ||
     classified === 'opted_out';
   const notInterested =
-    listingStatus === 'not_interested' ||
-    sessionStatus === 'not_interested' ||
-    interest === 'not_interested' ||
-    derived === 'not_interested' ||
-    classified === 'not_interested';
+    !reviewReply &&
+    (listingStatus === 'not_interested' ||
+      sessionStatus === 'not_interested' ||
+      interest === 'not_interested' ||
+      derived === 'not_interested' ||
+      classified === 'not_interested');
   const interestedSignal =
     !sold &&
     !notInterested &&
@@ -151,6 +164,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   else if (sold) stage = 'Deal Lost';
   else if (notInterested) stage = 'Not Interested';
   else if (bookedSignal) stage = 'Booked';
+  else if (reviewReply) stage = 'Review';
   else if (inbound && deep && callbackIntent) stage = 'Callback';
   else if (inbound && (classified === 'unclear' || derived === 'needs_review') && !interestedSignal) stage = 'Review';
   else if (inbound) stage = 'Replied';

@@ -312,6 +312,41 @@ if (lostSoldDesk.stage !== 'Deal Lost' || !lostSoldDesk.lost) {
   failed += 1;
 }
 
+const emailReview = lead({
+  listing: { nettikone_id: '2659991', status: 'not_interested' },
+  conversation: {
+    status: 'not_interested',
+    interest_status: 'not_interested',
+    derived_status: 'not_interested',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 3,
+    messages: [
+      { direction: 'inbound', classification: 'unclear', message: 'Kyllä, voit tutustua ja tilata osoitteessa kompaktikone.fi' },
+      { direction: 'inbound', classification: 'interested', message: 'Ok. Laita palkkio hinnasto niin katsotaan!' },
+      { direction: 'inbound', classification: 'not_interested', message: 'Ei käy. Laita kirjallisena sähköpostiin kiitos.' },
+    ],
+  },
+});
+if (emailReview.stage !== 'Review') {
+  console.error('call reject + email ask should be Review, not Not Interested', emailReview);
+  failed += 1;
+}
+
+const hardNo = lead({
+  listing: { nettikone_id: 'hard-no', status: 'not_interested' },
+  conversation: {
+    status: 'not_interested',
+    interest_status: 'not_interested',
+    last_inbound_at: '2026-08-29',
+    inbound_count: 1,
+    messages: [{ direction: 'inbound', classification: 'not_interested', message: 'Ei kiinnosta, kiitos.' }],
+  },
+});
+if (hardNo.stage !== 'Not Interested') {
+  console.error('hard no should stay Not Interested', hardNo);
+  failed += 1;
+}
+
 if (failed) {
   console.error(`FAILED ${failed}`);
   process.exit(1);

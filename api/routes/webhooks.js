@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
-import { classifyInbound } from '../lib/classify.js';
+import { classifyInbound, isNeedsReviewReply } from '../lib/classify.js';
 import { CLIENT_KEY, SOURCE_SYSTEM } from '../lib/campaign.js';
 
 const router = Router();
@@ -18,11 +18,16 @@ router.post('/wasup/inbound', async (req, res) => {
 
   const providedClassification = payload.classification || req.body?.classification;
   const fallback = classifyInbound(message);
-  const classification = normalizeClassification(providedClassification) || fallback.classification;
-  const needsHuman =
+  let classification = normalizeClassification(providedClassification) || fallback.classification;
+  let needsHuman =
     typeof payload.needs_human === 'boolean'
       ? payload.needs_human
       : classification === 'interested' || classification === 'needs_human' || fallback.needs_human;
+
+  if (isNeedsReviewReply(message) && !['sold', 'opted_out'].includes(classification)) {
+    classification = 'unclear';
+    needsHuman = true;
+  }
 
   const { data: session, error: sessionError } = await supabase
     .from('campaign_outbound_sessions')

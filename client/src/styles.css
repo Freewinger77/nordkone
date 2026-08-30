@@ -1416,7 +1416,7 @@ button, input, textarea, select { font: inherit; }
 .skel-line { height: 12px; }
 .skel-num { height: 32px; width: 72px; margin-top: 12px; border-radius: 10px; }
 .skel-chart { height: 72px; margin: 12px 0 8px; border-radius: 12px; }
-.skel-flow { height: 220px; margin-top: 18px; border-radius: 12px; }
+.skel-flow { height: 280px; margin-top: 12px; border-radius: 12px; }
 .skel-card { animation: popIn 420ms cubic-bezier(0.2, 0, 0.2, 1) both; }
 .skel-table { margin-top: 28px; }
 .skel-lead, .skel-row {

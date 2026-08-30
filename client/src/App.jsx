@@ -174,12 +174,14 @@ function App() {
   }, [calendarCalls, conversations, listingById, pendingCallbacks]);
 
   useEffect(() => {
-    if (queue !== null || !leads.length) return;
-    setQueue(
-      leads
-        .filter((lead) => lead.callback || lead.booked || lead.reviewSignal)
-        .map((lead) => lead.id)
-    );
+    if (!leads.length) return;
+    if (queue === null) {
+      setQueue(leads.filter(isLiveQueueLead).map((lead) => lead.id));
+      return;
+    }
+    const live = new Set(leads.filter(isLiveQueueLead).map((lead) => lead.id));
+    const next = queue.filter((id) => live.has(id));
+    if (next.length !== queue.length) setQueue(next);
   }, [leads, queue]);
 
   const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null;
@@ -373,7 +375,7 @@ function App() {
   const pageCount = Math.max(1, Math.ceil(pool.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
+  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id) && isLiveQueueLead(lead));
 
   const ctx = {
     advOpen,
@@ -1413,6 +1415,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     thinReply: reconciled.thinReply,
     opportunity: reconciled.opportunity,
     callbackAt: conversation.last_inbound_at || last?.at || null,
+    bookedAt: conversation.calendar_booking?.start || listing.raw_data?.calendar_booking?.start || null,
     ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
     snippet: last?.message || 'No messages yet',
     fields: [
@@ -1459,6 +1462,15 @@ function openLeadById(ctx, id, source) {
 
 function whatsAppHref(phone) {
   return `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
+}
+
+const QUEUE_MAX_AGE_MS = 40 * 24 * 60 * 60 * 1000;
+
+function isLiveQueueLead(lead) {
+  if (!lead?.booked && !lead?.callback) return false;
+  const at = Date.parse(lead.bookedAt || lead.callbackAt || 0);
+  if (!Number.isFinite(at) || !at) return true;
+  return Date.now() - at <= QUEUE_MAX_AGE_MS;
 }
 
 function OverviewSkeleton({ mobile = false }) {

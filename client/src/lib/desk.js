@@ -303,11 +303,11 @@ export function buildFlow(counts, activeStage) {
   const left = 10;
   const lastX = vw - labelRoom;
   const x = cols.map((_, index) => Math.round(left + ((lastX - left) * index) / Math.max(cols.length - 1, 1)));
-  const top = 6;
+  const top = 8;
   const height = 300;
-  const gap = 16;
+  const gap = 18;
   const unit = height / scale;
-  const lmin = 44;
+  const lmin = 58;
   const map = {};
   const nodes = [];
 
@@ -317,9 +317,11 @@ export function buildFlow(counts, activeStage) {
     let prevC = lastCol ? map.opportunities.y - lmin : -999;
     col.forEach((n) => {
       const h = Math.max(n.v * unit, 10);
-      let lc = y + h / 2;
-      if (lc - prevC < lmin) lc = prevC + lmin;
-      prevC = lc;
+      let lc = y + Math.min(h / 2, 14);
+      if (lc - prevC < lmin) {
+        y += lmin - (lc - prevC);
+        lc = y + Math.min(h / 2, 14);
+      }
       const node = {
         k: n.k,
         x: x[ci],
@@ -337,11 +339,11 @@ export function buildFlow(counts, activeStage) {
       };
       map[n.k] = node;
       nodes.push(node);
-      y += h + gap;
+      y += Math.max(h + gap, lmin);
     });
   });
 
-  const vh = Math.max(...nodes.map((node) => node.y + node.h), 140) + 18;
+  const vh = Math.max(...nodes.map((node) => Math.max(node.y + node.h, node.lc + 22)), 160) + 16;
   for (const node of nodes) {
     node.top = `${(node.lc / vh) * 100}%`;
   }

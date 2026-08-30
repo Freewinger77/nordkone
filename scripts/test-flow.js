@@ -93,6 +93,10 @@ if (booked.y > callback.y || callback.y > lost.y) {
   console.error('Booked / Callback / Lost order is wrong', { booked: booked.y, callback: callback.y, lost: lost.y });
   failed += 1;
 }
+if (callback.lc - booked.lc < 56 || lost.lc - callback.lc < 56) {
+  console.error('outcome labels are too close', { booked: booked.lc, callback: callback.lc, lost: lost.lc });
+  failed += 1;
+}
 
 for (const link of flow.links) {
   const from = flow.nodes.find((node) => node.k === link.from);

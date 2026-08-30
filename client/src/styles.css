@@ -347,24 +347,25 @@ button, input, textarea, select { font: inherit; }
   display: block;
   width: 100%;
   height: auto;
-  max-height: 248px;
+  max-height: 300px;
 }
 .flow-label {
   position: absolute;
-  width: 156px;
+  width: 200px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   cursor: pointer;
   transform: translateY(-50%);
 }
 .flow-label strong {
-  display: block;
-  font-size: 14px;
-  line-height: 18px;
+  display: inline;
+  font-size: 13px;
+  line-height: 16px;
   font-weight: 600;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.flow-label span { font-size: 13px; line-height: 17px; color: rgba(0, 0, 0, 0.45); }
+.flow-label span { font-size: 12px; line-height: 16px; color: rgba(0, 0, 0, 0.45); white-space: nowrap; }
 
 .reply-head {
   display: flex;

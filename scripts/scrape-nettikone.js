@@ -171,10 +171,70 @@ export async function runScrape(options = {}) {
   return stats;
 }
 
+export async function refreshStoredListings(options = {}) {
+  const supabase = options.supabase || (hasSupabaseConfig() ? createSupabase() : null);
+  if (!supabase) throw new Error('Supabase is required to refresh stored listings');
+
+  const category = options.category || DEFAULT_CATEGORY;
+  const sinceMs = options.since ? new Date(options.since).getTime() : 0;
+  const stats = { considered: 0, refreshed: 0, skipped_fresh: 0, failed: 0, gone: 0 };
+  const rows = [];
+  let from = 0;
+
+  while (from < 5000) {
+    const { data, error } = await supabase
+      .from('nordkone_listings')
+      .select('id,nettikone_id,listing_url,canonical_url,status,first_seen_at,last_seen_at,prospect_id')
+      .eq('client_key', CLIENT_KEY)
+      .range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+
+  const due = rows.filter((row) => {
+    if (!sinceMs) return true;
+    const seen = new Date(row.last_seen_at || 0).getTime();
+    return !Number.isFinite(seen) || seen < sinceMs - 2000;
+  });
+  stats.skipped_fresh = rows.length - due.length;
+  stats.considered = due.length;
+
+  await mapPool(due, LISTING_CONCURRENCY, async (row) => {
+    const url = row.listing_url || row.canonical_url;
+    if (!url) {
+      stats.failed += 1;
+      return;
+    }
+    try {
+      if (REQUEST_DELAY_MS) await sleep(REQUEST_DELAY_MS);
+      const listing = await scrapeListing(url, { category, timeoutMs: 15000 });
+      await upsertListing(supabase, listing, { existing: row });
+      stats.refreshed += 1;
+    } catch (error) {
+      const message = String(error.message || '');
+      if (/HTTP 404|HTTP 410/.test(message)) stats.gone += 1;
+      else stats.failed += 1;
+      console.error(`Refresh failed ${url}: ${error.message}`);
+    }
+  });
+
+  return stats;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const stats = await runScrape(args);
-  console.log(`Done: ${JSON.stringify(stats)}`);
+  const started = new Date().toISOString();
+  const stats = await runScrape({ ...args, scanAllPages: true });
+  let stored = null;
+  if (args['refresh-stored'] || args.refreshStored) {
+    stored = await refreshStoredListings({
+      since: started,
+      category: args.category,
+    });
+  }
+  console.log(`Done: ${JSON.stringify({ search: stats, stored })}`);
 }
 
 export async function mapPool(items, concurrency, fn) {

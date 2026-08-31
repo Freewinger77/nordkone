@@ -1,4 +1,6 @@
 nk-finland-*.json
+nk-scrape-plan.json
+nk-nordkone-category-gap.json
 nk-scrape/
 .env
 .env.*

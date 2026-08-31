@@ -359,7 +359,7 @@ function App() {
     opps: String(flowCounts.callback || flowCounts.interested || 0),
     won: String(flowCounts.won || 0),
     lost: String(flowCounts.lost || 0),
-    oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    oppPct: flowCounts.replied ? `${Math.round(((flowCounts.interested + flowCounts.booked) / flowCounts.replied) * 100)}% of replies` : 'of replies',
     wonPct: flowCounts.replied ? `${Math.round((flowCounts.won / flowCounts.replied) * 100)}% of replies` : 'of replies',
     lostPct: flowCounts.replied ? `${Math.round((flowCounts.lost / flowCounts.replied) * 100)}% of replies` : 'of replies',
     commission: formatEuro(pipelineCut) || '0 €',

@@ -353,13 +353,14 @@ function App() {
   const pipelineCut = Math.round(pipelineAsk * 0.05);
   const replyTotal = replies.office.reduce((a, b) => a + b, 0) + replies.after.reduce((a, b) => a + b, 0);
   const afterShare = replyTotal ? Math.round((replies.after.reduce((a, b) => a + b, 0) / replyTotal) * 100) : 0;
+  const openOpps = flowCounts.callback || flowCounts.interested || 0;
   const kpi = {
     booked: String(flowCounts.booked || 0),
     bookedDelta: flowCounts.booked ? `${flowCounts.booked} live` : '',
-    opps: String(flowCounts.callback || flowCounts.interested || 0),
+    opps: String(openOpps),
     won: String(flowCounts.won || 0),
     lost: String(flowCounts.lost || 0),
-    oppPct: flowCounts.replied ? `${Math.round(((flowCounts.interested + flowCounts.booked) / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    oppPct: flowCounts.replied ? `${Math.round(((openOpps + (flowCounts.booked || 0)) / flowCounts.replied) * 100)}% of replies` : 'of replies',
     wonPct: flowCounts.replied ? `${Math.round((flowCounts.won / flowCounts.replied) * 100)}% of replies` : 'of replies',
     lostPct: flowCounts.replied ? `${Math.round((flowCounts.lost / flowCounts.replied) * 100)}% of replies` : 'of replies',
     commission: formatEuro(pipelineCut) || '0 €',

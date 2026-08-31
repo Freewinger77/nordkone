@@ -1,0 +1,216 @@
+{
+  "at": "2026-08-31T08:35:00.000Z",
+  "already_scraped": {
+    "file": "nk-finland-construction.json",
+    "scope": "Finland, maarakennus + nosturit, asking price >= 5000 €, all seller types",
+    "total": 3758,
+    "dealers": 3186,
+    "private": 389,
+    "unknown_seller": 183,
+    "by_vehicle_type": {
+      "Excavators": 1423,
+      "Loaders": 821,
+      "Accessories": 454,
+      "Human lifters": 193,
+      "Backhoe loaders": 99,
+      "Telescopic handlers": 91,
+      "Dumpers": 53,
+      "Skid steer loaders": 21,
+      "Dozers": 20,
+      "Crushers": 25,
+      "Drilling": 27
+    }
+  },
+  "note": "Research ~10.6k is marketplace inventory (dealers + private). NordKone WhatsApp pool is private sellers. Live counts below are Finland (id_country=73) from Chrome on 2026-08-31. Desk was not updated.",
+  "live_finland": [
+    {
+      "id": "excavators",
+      "slug": "kaivinkone",
+      "fit": "YES",
+      "research": 1760,
+      "fi_all": 1751,
+      "fi_private": 197,
+      "fi_private_5k": 162,
+      "in_construction_dump": "mostly",
+      "missing": false
+    },
+    {
+      "id": "loaders",
+      "slug": "kuormaajat",
+      "fit": "YES",
+      "research": 1045,
+      "fi_all": 1036,
+      "fi_private": 136,
+      "fi_private_5k": 109,
+      "in_construction_dump": "mostly",
+      "missing": false
+    },
+    {
+      "id": "telehandlers",
+      "slug": "kurottajat",
+      "fit": "YES",
+      "research": 180,
+      "fi_all": 121,
+      "fi_private": 4,
+      "fi_private_5k": 3,
+      "in_construction_dump": "partial (91 listings)",
+      "missing": false
+    },
+    {
+      "id": "mini_loaders",
+      "slug": "pienkuormaajat",
+      "fit": "YES",
+      "research": 166,
+      "fi_all": 166,
+      "fi_private": 24,
+      "fi_private_5k": 19,
+      "in_construction_dump": "partial (70 listings)",
+      "missing": false
+    },
+    {
+      "id": "backhoe_loaders",
+      "slug": "kaivurikuormaajat",
+      "fit": "YES",
+      "research": null,
+      "fi_all": 129,
+      "fi_private": 54,
+      "fi_private_5k": 43,
+      "in_construction_dump": "mostly (99 listings)",
+      "missing": false
+    },
+    {
+      "id": "tractors",
+      "slug": "traktorit",
+      "fit": "YES",
+      "research": 2190,
+      "fi_all": 2122,
+      "fi_private": 746,
+      "fi_private_5k": 417,
+      "in_construction_dump": "almost none (14 titles)",
+      "missing": true
+    },
+    {
+      "id": "trucks",
+      "slug": "kuorma-autot",
+      "fit": "YES",
+      "research": 1970,
+      "fi_all": 1818,
+      "fi_private": 368,
+      "fi_private_5k": 261,
+      "in_construction_dump": "none",
+      "missing": true
+    },
+    {
+      "id": "trailers",
+      "slug": "peravaunut",
+      "fit": "YES",
+      "research": 830,
+      "fi_all": 813,
+      "fi_private": 205,
+      "fi_private_5k": 100,
+      "in_construction_dump": "none",
+      "missing": true
+    },
+    {
+      "id": "ag_trailers",
+      "slug": "maatalouskoneet type 1385 Traktorin peräkärryt",
+      "fit": "PROBABLY",
+      "research": 570,
+      "fi_all": null,
+      "note": "No dedicated /maatalousperavaunut page. Lives under maatalouskoneet.",
+      "in_construction_dump": "none",
+      "missing": true
+    },
+    {
+      "id": "forestry",
+      "slug": "metsakoneet",
+      "fit": "YES",
+      "research": 1925,
+      "fi_all": 1926,
+      "fi_private": 267,
+      "fi_private_5k": 118,
+      "in_construction_dump": "almost none (2 titles)",
+      "missing": true
+    },
+    {
+      "id": "agriculture_dept",
+      "slug": "maatalouskoneet",
+      "fit": "YES for tractors / high-value; hay/sprayers mixed",
+      "fi_all": 9295,
+      "fi_private": 2439,
+      "fi_private_5k": 938,
+      "missing": true
+    },
+    {
+      "id": "transport_dept",
+      "slug": "kuljetuskalusto",
+      "fit": "YES for trucks / heavy trailers / machine transporters",
+      "fi_all": 4647,
+      "fi_private": 928,
+      "fi_private_5k": 590,
+      "missing": true
+    },
+    {
+      "id": "material_handling_dept",
+      "slug": "materiaalinkasittely",
+      "fit": "PROBABLY",
+      "fi_all": 1222,
+      "fi_private": 128,
+      "fi_private_5k": 42,
+      "missing": true
+    },
+    {
+      "id": "work_machines_dept",
+      "slug": "tyokoneet",
+      "fit": "PROBABLY",
+      "fi_all": 1036,
+      "fi_private": 301,
+      "fi_private_5k": 48,
+      "missing": true
+    },
+    {
+      "id": "environment_dept",
+      "slug": "ymparistokoneet",
+      "fit": "PROBABLY",
+      "fi_all": 1660,
+      "fi_private": 274,
+      "fi_private_5k": 77,
+      "missing": true
+    },
+    {
+      "id": "cranes_dept",
+      "slug": "nosturit",
+      "fit": "PROBABLY",
+      "fi_all": 358,
+      "fi_private": 59,
+      "fi_private_5k": 29,
+      "in_construction_dump": "yes (209 listings)",
+      "missing": false
+    },
+    {
+      "id": "earthmoving_dept",
+      "slug": "maarakennus",
+      "fit": "YES",
+      "fi_all": 5980,
+      "fi_private": 724,
+      "fi_private_5k": 425,
+      "in_construction_dump": "yes (3549 listings, all seller types €5k+)",
+      "missing": false
+    }
+  ],
+  "scrape_next": {
+    "posted_by": "S",
+    "price_min": 5000,
+    "country": "Finland",
+    "departments": [
+      "maatalouskoneet",
+      "kuljetuskalusto",
+      "metsakoneet",
+      "materiaalinkasittely",
+      "tyokoneet",
+      "ymparistokoneet"
+    ],
+    "expected_private_5k": 1813,
+    "import_to_desk": false
+  }
+}

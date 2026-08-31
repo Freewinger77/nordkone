@@ -14,6 +14,7 @@ import {
   countFlow,
   cut,
   formatEuro,
+  displayAskingPrice,
   formatHelsinkiTime,
   isOpenOpportunity,
   isSuspiciousPrice,
@@ -784,7 +785,7 @@ function ListingsPage({ ctx }) {
               <span className="type-pill">{machineClassMeta(row.machine_class).label}</span>
             </div>
             <div className="col-price">
-              <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{row.price_text || '-'}</div>
+              <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{displayAskingPrice(row.price_text, row.price_eur)}</div>
               <div className="muted">{row.model_year || 'Year unknown'}</div>
             </div>
             <div style={{ width: 150, flexShrink: 0 }}>
@@ -811,7 +812,7 @@ function ListingsPage({ ctx }) {
               <div className="photo">Advert photo</div>
               <dl className="fields">
                 {[
-                  ['Price', listing.price_text || '-'],
+                  ['Price', displayAskingPrice(listing.price_text, listing.price_eur)],
                   ['Model year', listing.model_year || '-'],
                   ['Location', listing.location || '-'],
                   ['Registration', listing.registration_number || 'Ei rekisterissä'],
@@ -1212,15 +1213,15 @@ function OutboundModal({ ctx, onClose }) {
   }, [classes, priceMin, priceMax]);
 
   const selected = new Set(classes);
-  const allOn = selected.size === 0;
   const catalog = scope?.classes || [];
   const matching = scope?.matching;
 
   function toggleClass(id) {
     setClasses((current) => {
-      const active = current.length ? current : catalog.map((row) => row.id);
-      const next = active.includes(id) ? active.filter((value) => value !== id) : [...active, id];
-      if (!next.length || next.length === catalog.length) return [];
+      const next = current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id];
+      if (next.length === catalog.length) return [];
       return next;
     });
   }
@@ -1273,11 +1274,19 @@ function OutboundModal({ ctx, onClose }) {
           <div className="muted" style={{ marginTop: 4 }}>NordKone buys more than excavators. Combine any Nettikone classes.</div>
           <div className="class-grid">
             {catalog.map((row) => {
-              const on = allOn || selected.has(row.id);
+              const on = selected.has(row.id);
               return (
-                <button className={`class-chip ${on ? 'on' : ''}`} key={row.id} onClick={() => toggleClass(row.id)} type="button">
-                  <strong>{row.label}</strong>
-                  <span>{row.count ?? 0}</span>
+                <button
+                  aria-checked={on}
+                  className={`class-chip ${on ? 'on' : ''}`}
+                  key={row.id}
+                  onClick={() => toggleClass(row.id)}
+                  role="checkbox"
+                  type="button"
+                >
+                  <i className="class-check" />
+                  <span className="class-name">{row.label}</span>
+                  <span className="class-count">{row.count ?? 0}</span>
                 </button>
               );
             })}
@@ -1523,7 +1532,7 @@ function MobileListings({ ctx }) {
               <span className="pill">{listingStatusLabel(listing.status)}</span>
               <span className="muted">{listing.model_year || 'Year unknown'}</span>
               <span className="grow" />
-              <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{listing.price_text || '-'}</span>
+              <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{displayAskingPrice(listing.price_text, listing.price_eur)}</span>
             </div>
             <div className="muted" style={{ marginTop: 6 }}>{listing.normalized_phone || '-'}</div>
           </button>
@@ -1571,7 +1580,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     phone: conversation.number || listing.normalized_phone || '-',
     seller: listing.seller_name || (listing.prospect_id ? `Seller ${listing.prospect_id}` : 'Seller'),
     location: (listing.location || 'No location').split(',')[0],
-    price: listing.price_text || '-',
+    price: displayAskingPrice(listing.price_text, listing.price_eur),
     priceFlag: isSuspiciousPrice(listing.price_text, listing.price_eur),
     year: listing.model_year || 'Year unknown',
     hours,
@@ -1601,7 +1610,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     fields: [
       { k: 'Model year', v: listing.model_year || '-' },
       { k: 'Hours', v: hours },
-      { k: 'Asking price', v: listing.price_text || '-' },
+      { k: 'Asking price', v: displayAskingPrice(listing.price_text, listing.price_eur) },
       { k: 'Registration', v: listing.registration_number || 'Ei rekisterissä' },
       { k: 'Location', v: listing.location || '-' },
       { k: 'Seller prospect', v: listing.seller_name || listing.prospect_id || '-' },

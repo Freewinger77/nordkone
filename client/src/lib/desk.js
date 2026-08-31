@@ -61,11 +61,13 @@ export function cut(text, max = 30) {
   return value.length > max ? `${value.slice(0, max).replace(/\s+$/, '')}…` : value;
 }
 
-export function formatEuro(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '';
-  return `${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
-}
+export {
+  displayAskingPrice,
+  formatEuro,
+  looksGarbledPriceText,
+  recoverAskingPrice,
+  storedPriceText,
+} from '../../../shared/price-text.js';
 
 export function parseEuroAmount(value) {
   if (value == null || value === '') return 0;

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import * as cheerio from 'cheerio';
 import { firstValidPhone, extractPhoneCandidates } from '../api/lib/phone.js';
 import { classifyListing } from '../shared/machine-class.js';
+import { recoverAskingPrice, storedPriceText } from '../shared/price-text.js';
 import { createSupabase, hasSupabaseConfig } from '../api/lib/supabase.js';
 import { CLIENT_KEY, SOURCE_SYSTEM } from '../api/lib/campaign.js';
 
@@ -331,7 +332,8 @@ async function scrapeListing(url, { category, timeoutMs }) {
   const contactPhone = extractContactPhone($);
   const selectedPhone = descriptionPhone || contactPhone;
   const facts = extractFacts($);
-  const priceText = cleanPriceText(facts.Hinta) || extractPriceText($);
+  const priceText = recoverAskingPrice(cleanPriceText(facts.Hinta) || extractPriceText($));
+  const priceEur = parseEuro(priceText);
 
   const listing = {
     nettikone_id: nettikoneId,
@@ -342,8 +344,8 @@ async function scrapeListing(url, { category, timeoutMs }) {
     listing_type: facts['Ilmoitustyyppi'] || facts['Tyyppi'] || null,
     department: facts.Osasto || null,
     category: facts.Kategoria || category || null,
-    price_text: priceText,
-    price_eur: parseEuro(priceText),
+    price_text: storedPriceText(priceText, priceEur) || priceText,
+    price_eur: priceEur,
     vat_text: facts.ALv || facts.ALV || null,
     location: facts.Sijainti || facts.Paikkakunta || extractLocation($),
     region: facts.Maakunta || null,
@@ -502,6 +504,11 @@ function toNordKoneListing(listing, { prospectId, existing }) {
   const now = new Date().toISOString();
   const phone = listing.normalized_phone || existing?.normalized_phone || null;
   const keepPrice = looksLikeBadPrice(listing.price_eur, existing?.price_eur);
+  const nextEur = keepPrice ? existing?.price_eur : listing.price_eur;
+  const nextText = storedPriceText(
+    keepPrice ? existing?.price_text || listing.price_text : listing.price_text,
+    nextEur,
+  );
 
   return {
     client_key: CLIENT_KEY,
@@ -514,8 +521,8 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     listing_type: listing.listing_type,
     department: listing.department,
     category: listing.category,
-    price_text: keepPrice ? existing?.price_text || listing.price_text : listing.price_text,
-    price_eur: keepPrice ? existing?.price_eur : listing.price_eur,
+    price_text: nextText || (keepPrice ? existing?.price_text : listing.price_text) || null,
+    price_eur: nextEur,
     vat_text: listing.vat_text,
     location: listing.location,
     region: listing.region,
@@ -861,7 +868,7 @@ function isUsefulFactKey(key) {
 
 function cleanPriceText(value) {
   const match = String(value || '').match(/\b\d[\d\s.,]*(?:€|EUR)/i);
-  return match?.[0]?.trim() || null;
+  return recoverAskingPrice(match?.[0]) || match?.[0]?.trim() || null;
 }
 
 function listingSummary(listing) {

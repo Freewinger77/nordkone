@@ -107,7 +107,7 @@ const expectCounts = {
   callback: 1,
   await: 1,
   awaitReply: 2,
-  opportunities: 4,
+  opportunities: 3,
 };
 
 const stages = Object.fromEntries(fixtures.map((row) => [row.id, row.stage]));
@@ -146,6 +146,11 @@ if (interested.length !== counts.callback || interested[0]?.id !== 'call-1') {
 const lost = fixtures.filter((row) => matchesFlowFilter(row, 'lost'));
 if (lost.length !== counts.lost || lost[0]?.id !== 'sold-1') {
   console.error('lost filter mismatch', lost.map((row) => row.id));
+  failed += 1;
+}
+const opportunities = fixtures.filter((row) => matchesFlowFilter(row, 'opportunities'));
+if (opportunities.some((row) => row.lost) || opportunities.length !== counts.opportunities) {
+  console.error('lost should not count as an opportunity', opportunities.map((row) => row.id), counts.opportunities);
   failed += 1;
 }
 const booked = fixtures.filter((row) => matchesFlowFilter(row, 'booked'));

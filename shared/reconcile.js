@@ -191,7 +191,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const callback = stage === 'Callback';
   const awaiting = callback || stage === 'Interested';
   const thinReply = stage === 'Replied';
-  const opportunity = booked || callback || lost || won;
+  const opportunity = booked || callback || won;
 
   return {
     stage,

@@ -12,7 +12,7 @@ const flow = buildFlow({
   lost: 4,
   booked: 2,
   awaitReply: 7,
-  opportunities: 16,
+  opportunities: 12,
 });
 
 let failed = 0;
@@ -39,7 +39,7 @@ for (const needed of [
   'replied->awaitReply',
   'opportunities->booked',
   'opportunities->callback',
-  'opportunities->lost',
+  'replied->lost',
 ]) {
   if (!links.includes(needed)) {
     console.error('missing link', needed, links);
@@ -47,7 +47,7 @@ for (const needed of [
   }
 }
 
-if (links.some((link) => link.includes('won') || link.startsWith('replied->booked') || link.startsWith('replied->callback') || link.startsWith('replied->lost'))) {
+if (links.some((link) => link.includes('won') || link.startsWith('replied->booked') || link.startsWith('replied->callback') || link.startsWith('opportunities->lost'))) {
   console.error('zero or skip links should not render', links);
   failed += 1;
 }
@@ -64,7 +64,7 @@ const withWon = buildFlow({
   lost: 4,
   booked: 2,
   awaitReply: 7,
-  opportunities: 19,
+  opportunities: 15,
 });
 if (!withWon.nodes.some((node) => node.k === 'won') || !withWon.links.some((link) => link.from === 'opportunities' && link.to === 'won')) {
   console.error('positive Deal won should render from Opportunities');
@@ -77,6 +77,7 @@ const opportunities = flow.nodes.find((node) => node.k === 'opportunities');
 const booked = flow.nodes.find((node) => node.k === 'booked');
 const callback = flow.nodes.find((node) => node.k === 'callback');
 const lost = flow.nodes.find((node) => node.k === 'lost');
+const notint = flow.nodes.find((node) => node.k === 'notint');
 if (booked.x < flow.vw * 0.55) {
   console.error('outcome column should sit on the right of the card', { x: booked.x, vw: flow.vw });
   failed += 1;
@@ -89,12 +90,20 @@ if (booked.y + 1 < opportunities.y) {
   console.error('Booked sits above Opportunities', { booked: booked.y, opportunities: opportunities.y });
   failed += 1;
 }
-if (booked.y > callback.y || callback.y > lost.y) {
-  console.error('Booked / Callback / Lost order is wrong', { booked: booked.y, callback: callback.y, lost: lost.y });
+if (lost.x !== opportunities.x) {
+  console.error('Lost / Sold should sit under Replied, not Opportunities', { lost: lost.x, opportunities: opportunities.x, booked: booked.x });
   failed += 1;
 }
-if (callback.lc - booked.lc < 56 || lost.lc - callback.lc < 56) {
-  console.error('outcome labels are too close', { booked: booked.lc, callback: callback.lc, lost: lost.lc });
+if (lost.y <= opportunities.y || notint.y <= lost.y) {
+  console.error('Lost / Sold order under Replied is wrong', { opportunities: opportunities.y, lost: lost.y, notint: notint.y });
+  failed += 1;
+}
+if (booked.y > callback.y) {
+  console.error('Booked / Callback order is wrong', { booked: booked.y, callback: callback.y });
+  failed += 1;
+}
+if (callback.lc - booked.lc < 56 || lost.lc - opportunities.lc < 56) {
+  console.error('flow labels are too close', { booked: booked.lc, callback: callback.lc, lost: lost.lc, opportunities: opportunities.lc });
   failed += 1;
 }
 
@@ -131,7 +140,7 @@ const vFlow = buildVerticalFlow({
   lost: 4,
   booked: 2,
   awaitReply: 7,
-  opportunities: 16,
+  opportunities: 12,
 });
 const vMessaged = vFlow.nodes.find((node) => node.k === 'messaged');
 const vReplied = vFlow.nodes.find((node) => node.k === 'replied');
@@ -145,9 +154,14 @@ if (vMessaged.h >= vMessaged.w || vReplied.x < vMessaged.x - 1) {
   console.error('vertical nodes should be wide bars', vMessaged, vReplied);
   failed += 1;
 }
+const vLost = vFlow.nodes.find((node) => node.k === 'lost');
 const vReview = vFlow.nodes.find((node) => node.k === 'review');
 const vAwait = vFlow.nodes.find((node) => node.k === 'awaitReply');
-if (vAwait.x - vReview.x < 70) {
+if (vLost.y !== vOpps.y || vLost.y === vBooked.y) {
+  console.error('vertical Lost / Sold should sit on the Replied row', { lost: vLost.y, opps: vOpps.y, booked: vBooked.y });
+  failed += 1;
+}
+if (vAwait.x - vReview.x < 60) {
   console.error('crowded vertical labels need more slot room', { review: vReview.x, await: vAwait.x });
   failed += 1;
 }

@@ -274,7 +274,7 @@ function flowStages(counts) {
   const booked = counts.booked || 0;
   const callback = counts.callback || 0;
   const awaitReply = counts.awaitReply ?? Math.max(replied - callback - booked - review - lost - won - notint, 0);
-  const opportunities = Math.max(counts.opportunities || callback + booked + lost + won, callback + booked + lost + won);
+  const opportunities = Math.max(counts.opportunities || callback + booked + won, callback + booked + won);
   const scale = Math.max(messaged, 1);
 
   const cols = [
@@ -285,6 +285,7 @@ function flowStages(counts) {
     ],
     [
       { k: 'opportunities', label: 'Opportunities', v: opportunities, pct: pct(opportunities, replied), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Lost / Sold', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
       { k: 'notint', label: 'Not interested', v: notint, pct: pct(notint, replied), c: 'rgba(0,0,0,0.2)' },
       { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
       { k: 'awaitReply', label: 'Awaiting reply', v: awaitReply, pct: pct(awaitReply, replied), c: 'rgb(255,204,0)' },
@@ -292,7 +293,6 @@ function flowStages(counts) {
     [
       { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, opportunities), c: 'rgb(79,80,127)' },
       { k: 'callback', label: 'Call Now', v: callback, pct: pct(callback, opportunities), c: 'rgb(76,152,253)' },
-      { k: 'lost', label: 'Lost / Sold', v: lost, pct: pct(lost, opportunities), c: 'rgb(255,71,71)' },
       { k: 'won', label: 'Deal won', v: won, pct: pct(won, opportunities), c: 'rgb(113,221,140)' },
     ],
   ]
@@ -303,12 +303,12 @@ function flowStages(counts) {
     ['messaged', 'replied', replied],
     ['messaged', 'noreply', noreply],
     ['replied', 'opportunities', opportunities],
+    ['replied', 'lost', lost],
     ['replied', 'notint', notint],
     ['replied', 'review', review],
     ['replied', 'awaitReply', awaitReply],
     ['opportunities', 'booked', booked],
     ['opportunities', 'callback', callback],
-    ['opportunities', 'lost', lost],
     ['opportunities', 'won', won],
   ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 

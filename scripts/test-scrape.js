@@ -1,4 +1,4 @@
-import { splitFreshListingUrls } from './scrape-nettikone.js';
+import { mapPool, splitFreshListingUrls } from './scrape-nettikone.js';
 
 let failed = 0;
 
@@ -31,6 +31,16 @@ const emptyPage = splitFreshListingUrls(
 );
 if (emptyPage.fresh.length !== 0 || emptyPage.existing !== 1) {
   console.error('all-known page should have no fresh urls', emptyPage);
+  failed += 1;
+}
+
+const poolSeen = [];
+const pooled = await mapPool([1, 2, 3, 4, 5], 2, async (value) => {
+  poolSeen.push(value);
+  return value * 2;
+});
+if (pooled.join(',') !== '2,4,6,8,10' || poolSeen.length !== 5) {
+  console.error('mapPool should keep order and visit every item', pooled, poolSeen);
   failed += 1;
 }
 

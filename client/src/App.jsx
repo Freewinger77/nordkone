@@ -272,13 +272,13 @@ function App() {
     setError('');
     setScrapeNote('');
     try {
-      const result = await apiSend('/api/scrape/run?targetNew=10&maxPages=20&maxListings=30', { method: 'POST' });
+      const result = await apiSend('/api/scrape/run?targetNew=40&maxPages=40&maxListings=80', { method: 'POST' });
       const stats = result.stats || {};
       const extra =
-        stats.stop_reason === 'caught_up'
-          ? ' · already up to date'
-          : stats.stop_reason === 'time_budget'
-            ? ' · stopped early, click again'
+        stats.stop_reason === 'time_budget'
+          ? ' · stopped early, click again'
+          : stats.stop_reason === 'no_results'
+            ? ' · reached the last page'
             : '';
       setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages${extra}`);
       await load();

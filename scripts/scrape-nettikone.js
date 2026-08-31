@@ -11,7 +11,8 @@ dotenv.config({ override: true });
 const BASE_URL = process.env.NETTIKONE_BASE_URL || 'https://www.nettikone.com';
 const DEFAULT_CATEGORY = process.env.NETTIKONE_DEFAULT_CATEGORY || 'kaivinkone';
 const DEFAULT_POSTED_BY = process.env.NETTIKONE_DEFAULT_POSTED_BY || 'S';
-const REQUEST_DELAY_MS = Number(process.env.NETTIKONE_REQUEST_DELAY_MS || 750);
+const REQUEST_DELAY_MS = Number(process.env.NETTIKONE_REQUEST_DELAY_MS || 150);
+const LISTING_CONCURRENCY = Math.max(1, Number(process.env.NETTIKONE_LISTING_CONCURRENCY || 4));
 const USER_AGENT =
   process.env.NETTIKONE_USER_AGENT ||
   'Mozilla/5.0 NordKoneLeadBot/0.1 (+https://nordkone.fi)';
@@ -44,7 +45,7 @@ export async function runScrape(options = {}) {
   const startedAt = Date.now();
   const budgetLeft = () => (budgetMs ? budgetMs - (Date.now() - startedAt) : Number.POSITIVE_INFINITY);
   const seenUrls = new Set();
-  let knownPageStreak = 0;
+  const scanAllPages = options.scanAllPages !== false && options.scanAllPages !== 'false';
   const stats = {
     target_new_leads: targetNewLeads,
     max_pages: maxPages,
@@ -88,25 +89,24 @@ export async function runScrape(options = {}) {
     stats.discovered += pagePlan.discovered;
     stats.existing_listings += pagePlan.existing;
 
-    if (!pagePlan.fresh.length) {
-      knownPageStreak += 1;
-      if (knownPageStreak >= 3) {
-        stats.stop_reason = 'caught_up';
-        break;
-      }
-      continue;
+    if (!pagePlan.discovered) {
+      stats.stop_reason = 'no_results';
+      break;
     }
-    knownPageStreak = 0;
 
-    for (const url of pagePlan.fresh) {
+    if (!pagePlan.fresh.length) continue;
+
+    const room = Math.max(maxListings - stats.processed, 0);
+    const batch = pagePlan.fresh.slice(0, room);
+    await mapPool(batch, LISTING_CONCURRENCY, async (url) => {
+      if (stats.stop_reason) return;
       if (budgetLeft() < 5000) {
         stats.stop_reason = 'time_budget';
-        break;
+        return;
       }
-
       if (stats.processed >= maxListings) {
         stats.stop_reason = 'max_listings_reached';
-        break;
+        return;
       }
 
       try {
@@ -116,10 +116,10 @@ export async function runScrape(options = {}) {
         if (existing && !refreshExisting) {
           stats.existing_listings += 1;
           if (nettikoneId) knownIds.add(nettikoneId);
-          continue;
+          return;
         }
 
-        await sleep(Math.min(REQUEST_DELAY_MS, Math.max(budgetLeft() - 4000, 150)));
+        if (REQUEST_DELAY_MS) await sleep(REQUEST_DELAY_MS);
         const listing = await scrapeListing(url, {
           category,
           timeoutMs: Math.min(12000, Math.max(budgetLeft() - 2000, 3000)),
@@ -143,16 +143,18 @@ export async function runScrape(options = {}) {
           if (listing.normalized_phone) stats.new_leads += 1;
         }
 
-        if (stats.new_leads >= targetNewLeads) {
+        if (!scanAllPages && stats.new_leads >= targetNewLeads) {
           stats.stop_reason = 'target_new_leads_reached';
-          break;
         }
       } catch (error) {
         stats.failed += 1;
         console.error(`Failed ${url}: ${error.message}`);
       }
-    }
+    });
 
+    if (stats.processed >= maxListings && !stats.stop_reason) {
+      stats.stop_reason = 'max_listings_reached';
+    }
     if (stats.stop_reason) break;
   }
 
@@ -173,6 +175,24 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const stats = await runScrape(args);
   console.log(`Done: ${JSON.stringify(stats)}`);
+}
+
+export async function mapPool(items, concurrency, fn) {
+  const list = [...items];
+  if (!list.length) return [];
+  const results = new Array(list.length);
+  let next = 0;
+
+  async function worker() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(list[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(Math.max(concurrency, 1), list.length) }, worker));
+  return results;
 }
 
 async function discoverListingUrls({ pages, category, postedBy, startUrl, hasCustomUrl }) {

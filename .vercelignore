@@ -1,0 +1,4 @@
+nk-finland-*.json
+nk-scrape/
+.env
+.env.*

@@ -3,6 +3,7 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
+import { isNeedsReviewReply, normalizeInboundClassification } from '../../shared/intent.js';
 
 const router = Router();
 
@@ -260,7 +261,7 @@ router.get('/calendar-calls', async (req, res) => {
     .from('campaign_inbound_events')
     .select('*')
     .eq('client_key', CLIENT_KEY)
-    .in('classification', ['interested', 'needs_human'])
+    .in('classification', ['interested', 'needs_human', 'ready_for_call', 'booked'])
     .order('received_at', { ascending: false })
     .limit(limit * 3);
 
@@ -319,7 +320,9 @@ router.get('/calendar-calls', async (req, res) => {
       callback_number: extractCallbackNumber(event) || event.number,
       latest_message: event.message,
       reply_message: event.raw_event?.reply_message || event.raw_event?.agent_reply_message || null,
-      classification: event.classification,
+      classification:
+        normalizeInboundClassification(event.raw_event?.classification || event.raw_event?.lead_status) ||
+        event.classification,
       needs_human: event.needs_human,
       listing,
     };
@@ -623,7 +626,7 @@ router.post('/calendar-booking', async (req, res) => {
 
   let query = supabase
     .from('campaign_outbound_sessions')
-    .select('id,raw_data')
+    .select('id,raw_data,booked_at,source_customer_id,prospect_id,status')
     .eq('client_key', CLIENT_KEY)
     .eq('source_system', SOURCE_SYSTEM);
 
@@ -637,6 +640,11 @@ router.post('/calendar-booking', async (req, res) => {
   if (!session) return res.status(404).json({ error: 'session not found' });
 
   const rawData = session.raw_data || {};
+  const now = new Date().toISOString();
+  const bookingStatus = String(status || '').toLowerCase();
+  const bookingFailed = ['cancelled', 'canceled', 'declined', 'failed'].includes(bookingStatus);
+  const booked = !bookingFailed && Boolean(event_id || start || link);
+  const bookedAt = session.booked_at || rawData.booked_at || now;
   const nextRawData = {
     ...rawData,
     calendar_booking: {
@@ -653,19 +661,64 @@ router.post('/calendar-booking', async (req, res) => {
       attendee_response: attendee_response || null,
       error: error || null,
       source: raw_event.source || 'wf2',
-      updated_at: new Date().toISOString(),
+      updated_at: now,
       raw_event,
     },
+    ...(booked
+      ? {
+          desk_status: 'Booked',
+          desk_status_updated_at: now,
+          booked_at: bookedAt,
+        }
+      : {}),
   };
+
+  const sessionPatch = {
+    raw_data: nextRawData,
+    updated_at: now,
+  };
+  if (booked) {
+    sessionPatch.booked_at = bookedAt;
+    sessionPatch.status = 'interested';
+    sessionPatch.interest_status = 'interested';
+    sessionPatch.stop_reminders = true;
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from('campaign_outbound_sessions')
-    .update({ raw_data: nextRawData, updated_at: new Date().toISOString() })
+    .update(sessionPatch)
     .eq('id', session.id)
-    .select('id,source_customer_id,raw_data')
+    .select('id,source_customer_id,raw_data,booked_at,status,interest_status')
     .single();
 
   if (updateError) throw updateError;
+
+  const listingId = updated.source_customer_id || sourceCustomerId || session.source_customer_id;
+  if (booked && listingId) {
+    const { data: listing } = await supabase
+      .from('nordkone_listings')
+      .select('id,raw_data')
+      .eq('client_key', CLIENT_KEY)
+      .eq('nettikone_id', listingId)
+      .maybeSingle();
+
+    if (listing?.id) {
+      await supabase
+        .from('nordkone_listings')
+        .update({
+          status: deskStatusToListingStatus('Booked'),
+          raw_data: {
+            ...(listing.raw_data || {}),
+            desk_status: 'Booked',
+            desk_status_updated_at: now,
+          },
+          updated_at: now,
+        })
+        .eq('id', listing.id)
+        .eq('client_key', CLIENT_KEY);
+    }
+  }
+
   res.json({ ok: true, session: updated });
 });
 
@@ -714,7 +767,9 @@ function buildConversationMessages(session = {}, inboundEvents = []) {
       sender: 'Seller',
       message: event.message,
       at: event.received_at || event.created_at,
-      classification: event.classification,
+      classification:
+        normalizeInboundClassification(event.raw_event?.classification || event.raw_event?.lead_status) ||
+        event.classification,
       needs_human: event.needs_human,
     });
 
@@ -744,7 +799,13 @@ function extractCalendarMetadata(event = {}, session = {}) {
     rawSession.calendar ||
     rawSession.calendar_booking ||
     rawSession.calendarBooking ||
-    null;
+    (rawEvent.classification === 'booked' && (rawEvent.call_start || rawEvent.start || rawEvent.event_id)
+      ? {
+          start: rawEvent.call_start || rawEvent.start,
+          event_id: rawEvent.event_id || rawEvent.calendar_event_id,
+          status: 'booked',
+        }
+      : null);
 
   if (!candidate) return null;
 
@@ -821,12 +882,15 @@ function deskStatusToListingStatus(deskStatus) {
     Interested: 'interested',
     'No Answer': 'contacted',
     Callback: 'replied',
+    'Call Now': 'replied',
     Booked: 'interested',
     'Deal Won': 'interested',
     'Deal Lost': 'sold',
+    'Lost / Sold': 'sold',
     'Not Interested': 'not_interested',
     'Opted Out': 'opted_out',
     Review: 'needs_human',
+    Replied: 'replied',
     Eligible: 'eligible',
     Contacted: 'contacted',
   };
@@ -930,25 +994,35 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   const interest = session?.interest_status || listing?.interest_status || '';
   const booking = extractCalendarMetadata(events[events.length - 1] || {}, session || {}) || bookingFromRecord(session || {});
 
+  const latest = events[events.length - 1] || {};
+  const latestInbound = latest.message || '';
+  const latestText = `${latestInbound} ${latest.raw_event?.reply_message || ''}`;
+  const reviewReply = Boolean(latestInbound && isNeedsReviewReply(latestInbound));
+
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';
-  if (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested') {
+  if (interest === 'booked' || latest.classification === 'booked') return 'booked';
+  if (interest === 'ready_for_call' || sessionStatus === 'ready_for_call' || latest.classification === 'ready_for_call') {
+    return 'ready_for_call';
+  }
+  if (interest === 'needs_review' || latest.classification === 'needs_review') return 'needs_review';
+  if (interest === 'machine_available' || latest.classification === 'machine_available') return 'machine_available';
+  if (
+    !reviewReply &&
+    (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested')
+  ) {
     return 'not_interested';
   }
   if (isActiveBooking(booking)) return 'booked';
+  if (reviewReply) return 'needs_review';
   if (listingStatus === 'interested' || sessionStatus === 'interested' || interest === 'interested') {
-    const latestText = events.length
-      ? `${events[events.length - 1].message || ''} ${events[events.length - 1].raw_event?.reply_message || ''}`
-      : '';
-    if (isReadyForCallText(latestText)) return 'ready_for_call';
+    if (isReadyForCallText(latestInbound)) return 'ready_for_call';
     return 'interested';
   }
   if (!session && listingStatus === 'eligible') return 'ready_to_contact';
   if (!events.length) return session ? (session.last_inbound_at ? 'needs_review' : 'contacted') : listingStatus || 'ready_to_contact';
 
-  const latest = events[events.length - 1];
   const fullText = events.map((event) => `${event.message || ''} ${event.raw_event?.reply_message || ''}`).join(' ');
-  const latestText = `${latest.message || ''} ${latest.raw_event?.reply_message || ''}`;
 
   if (containsAny(fullText, ['myyty', 'meni jo', 'kaupat tehty', 'ei ole enää']) || events.some((event) => event.classification === 'sold')) {
     return 'sold';
@@ -959,7 +1033,7 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
   if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse']) || events.some((event) => event.classification === 'not_interested')) {
     return 'not_interested';
   }
-  if (isReadyForCallText(latestText)) return 'ready_for_call';
+  if (isReadyForCallText(latestInbound)) return 'ready_for_call';
   if (isCommercialInterestText(fullText)) return 'interested';
   if (isMachineAvailableText(fullText)) return 'machine_available';
   if (events.some((event) => event.classification === 'needs_human')) return 'needs_review';
@@ -988,9 +1062,8 @@ function isReadyForCallText(value = '') {
     'sopii',
     'käy hyvin',
     'milloin vain',
+    'milloin tahansa',
     'tavoitettavissa',
-    'heti',
-    'nyt',
     'min kuluttua',
   ]);
 }

@@ -184,7 +184,7 @@ export async function refreshStoredListings(options = {}) {
   while (from < 5000) {
     const { data, error } = await supabase
       .from('nordkone_listings')
-      .select('id,nettikone_id,listing_url,canonical_url,status,first_seen_at,last_seen_at,prospect_id')
+      .select('id,nettikone_id,listing_url,canonical_url,status,first_seen_at,last_seen_at,prospect_id,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason')
       .eq('client_key', CLIENT_KEY)
       .range(from, from + 999);
     if (error) throw error;
@@ -453,7 +453,7 @@ async function loadKnownListingIds(supabase) {
 async function loadExistingListing(supabase, nettikoneId) {
   const { data, error } = await supabase
     .from('nordkone_listings')
-    .select('id,prospect_id,status,first_seen_at')
+    .select('id,prospect_id,status,first_seen_at,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason')
     .eq('client_key', CLIENT_KEY)
     .eq('nettikone_id', nettikoneId)
     .maybeSingle();
@@ -485,8 +485,18 @@ function toCampaignProspect(listing) {
   };
 }
 
+export function looksLikeBadPrice(next, prev) {
+  if (next == null) return Boolean(prev);
+  if (prev == null) return false;
+  if (next > 5_000_000 && prev < 500_000) return true;
+  if (prev > 0 && next / prev > 1.5 && Math.abs(next - prev) > 3000) return true;
+  return false;
+}
+
 function toNordKoneListing(listing, { prospectId, existing }) {
   const now = new Date().toISOString();
+  const phone = listing.normalized_phone || existing?.normalized_phone || null;
+  const keepPrice = looksLikeBadPrice(listing.price_eur, existing?.price_eur);
 
   return {
     client_key: CLIENT_KEY,
@@ -499,8 +509,8 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     listing_type: listing.listing_type,
     department: listing.department,
     category: listing.category,
-    price_text: listing.price_text,
-    price_eur: listing.price_eur,
+    price_text: keepPrice ? existing?.price_text || listing.price_text : listing.price_text,
+    price_eur: keepPrice ? existing?.price_eur : listing.price_eur,
     vat_text: listing.vat_text,
     location: listing.location,
     region: listing.region,
@@ -511,13 +521,13 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     seller_name: listing.seller_name,
     seller_type: listing.seller_type,
     description: listing.description,
-    description_phone: listing.description_phone,
-    contact_phone: listing.contact_phone,
-    selected_phone: listing.selected_phone,
-    normalized_phone: listing.normalized_phone,
-    phone_source: listing.phone_source,
-    status: existing?.status || (listing.normalized_phone ? 'eligible' : 'ignored'),
-    ineligible_reason: listing.ineligible_reason,
+    description_phone: listing.description_phone || existing?.description_phone || null,
+    contact_phone: listing.contact_phone || existing?.contact_phone || null,
+    selected_phone: listing.selected_phone || existing?.selected_phone || null,
+    normalized_phone: phone,
+    phone_source: listing.normalized_phone ? listing.phone_source : existing?.phone_source || listing.phone_source,
+    status: existing?.status || (phone ? 'eligible' : 'ignored'),
+    ineligible_reason: phone ? listing.ineligible_reason : existing?.ineligible_reason || listing.ineligible_reason,
     raw_data: listing.raw_data,
     first_seen_at: existing?.first_seen_at || now,
     last_seen_at: now,

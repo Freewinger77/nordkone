@@ -1,4 +1,4 @@
-import { mapPool, splitFreshListingUrls } from './scrape-nettikone.js';
+import { looksLikeBadPrice, mapPool, splitFreshListingUrls } from './scrape-nettikone.js';
 
 let failed = 0;
 
@@ -41,6 +41,11 @@ const pooled = await mapPool([1, 2, 3, 4, 5], 2, async (value) => {
 });
 if (pooled.join(',') !== '2,4,6,8,10' || poolSeen.length !== 5) {
   console.error('mapPool should keep order and visit every item', pooled, poolSeen);
+  failed += 1;
+}
+
+if (looksLikeBadPrice(2_091_615, 119_225) !== true || looksLikeBadPrice(62_000, 60_000) !== false) {
+  console.error('price guard should drop concatenated prices and keep modest moves');
   failed += 1;
 }
 

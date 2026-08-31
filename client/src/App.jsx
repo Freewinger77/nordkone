@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { apiGet, apiSend } from './lib/api.js';
 import { Glyph, WhatsAppMark } from './lib/icons.jsx';
@@ -236,7 +236,7 @@ function App() {
   }
 
   async function updateSettings(next) {
-    if (!canUseControls) return;
+    if (!canUseControls) return false;
     setSaving(true);
     setError('');
     try {
@@ -262,8 +262,10 @@ function App() {
           };
         });
       }
+      return true;
     } catch (settingsError) {
       setError(settingsError.message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1190,6 +1192,10 @@ function OutboundModal({ ctx, onClose }) {
   const [priceMin, setPriceMin] = useState(saved.price_min || 0);
   const [priceMax, setPriceMax] = useState(saved.price_max == null ? sliderMax : saved.price_max);
   const [scope, setScope] = useState(null);
+  const [filterNote, setFilterNote] = useState('');
+  const noteTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1213,25 +1219,32 @@ function OutboundModal({ ctx, onClose }) {
   }, [classes, priceMin, priceMax]);
 
   const selected = new Set(classes);
+  const allOn = selected.size === 0;
   const catalog = scope?.classes || [];
   const matching = scope?.matching;
 
   function toggleClass(id) {
     setClasses((current) => {
-      const next = current.includes(id)
-        ? current.filter((value) => value !== id)
-        : [...current, id];
-      if (next.length === catalog.length) return [];
+      const active = current.length ? current : catalog.map((row) => row.id);
+      const next = active.includes(id) ? active.filter((value) => value !== id) : [...active, id];
+      if (!next.length || next.length === catalog.length) return [];
       return next;
     });
   }
 
-  function saveFilters() {
-    ctx.saveOutboundFilters({
+  async function saveFilters() {
+    setFilterNote('');
+    const ok = await ctx.saveOutboundFilters({
       machine_classes: classes,
       price_min: priceMin || 0,
       price_max: priceMax >= sliderMax ? null : priceMax,
     });
+    if (!ok) return;
+    setFilterNote('Filters saved');
+    clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => {
+      setFilterNote('');
+    }, 2800);
   }
 
   return (
@@ -1274,7 +1287,7 @@ function OutboundModal({ ctx, onClose }) {
           <div className="muted" style={{ marginTop: 4 }}>NordKone buys more than excavators. Combine any Nettikone classes.</div>
           <div className="class-grid">
             {catalog.map((row) => {
-              const on = selected.has(row.id);
+              const on = allOn || selected.has(row.id);
               return (
                 <button
                   aria-checked={on}
@@ -1317,8 +1330,9 @@ function OutboundModal({ ctx, onClose }) {
           <div className="muted" style={{ flex: 1 }}>
             {matching == null ? 'Counting matching leads…' : `${matching} eligible lead${matching === 1 ? '' : 's'} match this mix`}
           </div>
+          {filterNote ? <span className="save-note">{filterNote}</span> : null}
           <button className="btn btn-dark" disabled={ctx.saving || !ctx.canUseControls} onClick={saveFilters} type="button">
-            Save filters
+            {ctx.saving ? 'Saving…' : 'Save filters'}
           </button>
         </div>
       </div>

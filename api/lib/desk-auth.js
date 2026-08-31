@@ -30,7 +30,10 @@ export function safeEqual(left, right) {
 }
 
 export function credentialsMatch(username, password) {
-  const userOk = safeEqual(String(username || '').trim(), deskUsername());
+  const userOk = safeEqual(
+    String(username || '').trim().toLowerCase(),
+    String(deskUsername() || '').trim().toLowerCase(),
+  );
   const passOk = safeEqual(String(password || ''), deskPassword());
   return userOk && passOk;
 }

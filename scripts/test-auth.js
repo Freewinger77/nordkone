@@ -11,7 +11,10 @@ import {
 resetAuthAttempts();
 
 assert.equal(credentialsMatch('nordkone', 'Wasup@123'), true);
-assert.equal(credentialsMatch('Nordkone', 'Wasup@123'), false);
+assert.equal(credentialsMatch('Nordkone', 'Wasup@123'), true);
+assert.equal(credentialsMatch('NORDKONE', 'Wasup@123'), true);
+assert.equal(credentialsMatch('NordKone', 'Wasup@123'), true);
+assert.equal(credentialsMatch(' nordkone ', 'Wasup@123'), true);
 assert.equal(credentialsMatch('nordkone', 'wasup@123'), false);
 assert.equal(credentialsMatch('', ''), false);
 

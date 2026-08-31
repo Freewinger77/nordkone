@@ -31,6 +31,8 @@ import {
   weekdayReplySeries,
 } from './lib/desk.js';
 import { Login } from './Login.jsx';
+import { PriceSlider } from './lib/PriceSlider.jsx';
+import { machineClassMeta } from '../../shared/machine-class.js';
 import './styles.css';
 
 const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
@@ -460,6 +462,8 @@ function App() {
     remainingToday: control?.remaining_today ?? Math.max(dailyCap - sentToday, 0),
     runScrape,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
+    saveOutboundFilters: (outbound_filters) => updateSettings({ outbound_filters }),
+    settings,
     toggleActivitySort: () => {
       setActivitySort((value) => (value === 'newest' ? 'oldest' : 'newest'));
       setPage(1);
@@ -777,6 +781,7 @@ function ListingsPage({ ctx }) {
             <div className="col-lead">
               <div className="machine">{row.machine_title}</div>
               <div className="muted">{row.nettikone_id} · {row.location || 'No location'}</div>
+              <span className="type-pill">{machineClassMeta(row.machine_class).label}</span>
             </div>
             <div className="col-price">
               <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{row.price_text || '-'}</div>
@@ -810,6 +815,7 @@ function ListingsPage({ ctx }) {
                   ['Model year', listing.model_year || '-'],
                   ['Location', listing.location || '-'],
                   ['Registration', listing.registration_number || 'Ei rekisterissä'],
+                  ['Type', machineClassMeta(listing.machine_class).label],
                   ['Phone', listing.normalized_phone || '-'],
                   ['Seller prospect', listing.seller_name || listing.prospect_id || '-'],
                 ].map(([k, v]) => (
@@ -1177,13 +1183,63 @@ function LeadSheet({ ctx }) {
 }
 
 function OutboundModal({ ctx, onClose }) {
+  const sliderMax = 500000;
+  const saved = ctx.settings?.outbound_filters || { machine_classes: [], price_min: 0, price_max: null };
+  const [classes, setClasses] = useState(saved.machine_classes || []);
+  const [priceMin, setPriceMin] = useState(saved.price_min || 0);
+  const [priceMax, setPriceMax] = useState(saved.price_max == null ? sliderMax : saved.price_max);
+  const [scope, setScope] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (classes.length) params.set('classes', classes.join(','));
+    params.set('price_min', String(priceMin || 0));
+    if (priceMax < sliderMax) params.set('price_max', String(priceMax));
+    const timer = setTimeout(() => {
+      apiGet(`/api/outbound/scope?${params}`)
+        .then((data) => {
+          if (!cancelled) setScope(data);
+        })
+        .catch(() => {
+          if (!cancelled) setScope(null);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [classes, priceMin, priceMax]);
+
+  const selected = new Set(classes);
+  const allOn = selected.size === 0;
+  const catalog = scope?.classes || [];
+  const matching = scope?.matching;
+
+  function toggleClass(id) {
+    setClasses((current) => {
+      const active = current.length ? current : catalog.map((row) => row.id);
+      const next = active.includes(id) ? active.filter((value) => value !== id) : [...active, id];
+      if (!next.length || next.length === catalog.length) return [];
+      return next;
+    });
+  }
+
+  function saveFilters() {
+    ctx.saveOutboundFilters({
+      machine_classes: classes,
+      price_min: priceMin || 0,
+      price_max: priceMax >= sliderMax ? null : priceMax,
+    });
+  }
+
   return (
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal" onClick={(event) => event.stopPropagation()}>
         <div className="row" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Outbound</div>
-            <div className="muted" style={{ marginTop: 2 }}>Same WF-1 switch and daily cap as the previous desk.</div>
+            <div className="muted" style={{ marginTop: 2 }}>Pick machine types and a price band. Sending stays off until you flip the switch.</div>
           </div>
           <button className="sq lg" onClick={onClose} type="button">×</button>
         </div>
@@ -1191,7 +1247,7 @@ function OutboundModal({ ctx, onClose }) {
           <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} style={{ marginTop: 7 }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}>{ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</div>
-            <div className="muted">{ctx.outboundOn ? 'Leads are picked only while this is on and the daily cap has room.' : 'No candidates are being sent.'}</div>
+            <div className="muted">{ctx.outboundOn ? 'Leads are picked only while this is on, the daily cap has room, and they match the filters below.' : 'No candidates are being sent.'}</div>
           </div>
           <button className={`switch ${ctx.outboundOn ? 'on' : ''}`} disabled={ctx.saving || !ctx.canUseControls} onClick={ctx.toggleOutbound} type="button">
             <i />
@@ -1209,9 +1265,62 @@ function OutboundModal({ ctx, onClose }) {
             </div>
           </div>
         </div>
+        <div style={{ marginTop: 28 }}>
+          <div className="row" style={{ alignItems: 'baseline' }}>
+            <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Machine types</div>
+            <button className="link-clear" onClick={() => setClasses([])} type="button">All types</button>
+          </div>
+          <div className="muted" style={{ marginTop: 4 }}>NordKone buys more than excavators. Combine any Nettikone classes.</div>
+          <div className="class-grid">
+            {catalog.map((row) => {
+              const on = allOn || selected.has(row.id);
+              return (
+                <button className={`class-chip ${on ? 'on' : ''}`} key={row.id} onClick={() => toggleClass(row.id)} type="button">
+                  <strong>{row.label}</strong>
+                  <span>{row.count ?? 0}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ marginTop: 28 }}>
+          <div className="row" style={{ alignItems: 'baseline' }}>
+            <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Price range</div>
+            <span className="muted">{formatSliderBound(priceMin)} – {priceMax >= sliderMax ? 'No max' : formatSliderBound(priceMax)}</span>
+          </div>
+          <div className="muted" style={{ marginTop: 4 }}>Airbnb-style band across every asking price, including cheap attachments and six-figure dealers.</div>
+          <PriceSlider
+            histogram={scope?.price?.histogram || []}
+            max={sliderMax}
+            onChange={(nextMin, nextMax) => {
+              setPriceMin(nextMin);
+              setPriceMax(nextMax);
+            }}
+            valueMax={priceMax}
+            valueMin={priceMin}
+          />
+          <div className="air-labels">
+            <span>0 €</span>
+            <span>500k €</span>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 22, alignItems: 'center' }}>
+          <div className="muted" style={{ flex: 1 }}>
+            {matching == null ? 'Counting matching leads…' : `${matching} eligible lead${matching === 1 ? '' : 's'} match this mix`}
+          </div>
+          <button className="btn btn-dark" disabled={ctx.saving || !ctx.canUseControls} onClick={saveFilters} type="button">
+            Save filters
+          </button>
+        </div>
       </div>
     </div>
   );
+}
+
+function formatSliderBound(value) {
+  const amount = Number(value) || 0;
+  if (amount >= 1000) return `${Math.round(amount / 1000)}k €`;
+  return `${amount} €`;
 }
 
 function CampaignFlow({ flow, onPick, stage, vertical = false }) {

@@ -4,6 +4,13 @@ import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
 import { isNeedsReviewReply, normalizeInboundClassification } from '../../shared/intent.js';
+import {
+  MACHINE_CLASSES,
+  PRICE_SLIDER_MAX,
+  classifyListing,
+  listingMatchesOutboundFilters,
+  parseOutboundFilters,
+} from '../../shared/machine-class.js';
 
 const router = Router();
 
@@ -358,6 +365,44 @@ router.get('/calendar-calls', async (req, res) => {
   });
 });
 
+router.get('/outbound/scope', async (req, res) => {
+  const supabase = createSupabase();
+  const config = await loadCampaignConfig(supabase);
+  const queryFilters = {
+    machine_classes: String(req.query.classes || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    price_min: req.query.price_min,
+    price_max: req.query.price_max === '' || req.query.price_max == null ? null : req.query.price_max,
+  };
+  const filters = parseOutboundFilters(
+    req.query.classes != null || req.query.price_min != null || req.query.price_max != null
+      ? queryFilters
+      : config
+  );
+  const listings = await loadEligibleListings(supabase, 2000);
+  const scoped = listings.filter((row) => listingMatchesOutboundFilters(row, filters));
+  const classCounts = Object.fromEntries(MACHINE_CLASSES.map((row) => [row.id, 0]));
+  const prices = [];
+  for (const row of listings) {
+    classCounts[classifyListing(row)] = (classCounts[classifyListing(row)] || 0) + 1;
+    if (Number.isFinite(Number(row.price_eur))) prices.push(Number(row.price_eur));
+  }
+  res.json({
+    filters,
+    classes: MACHINE_CLASSES.map((row) => ({ ...row, count: classCounts[row.id] || 0 })),
+    eligible: listings.length,
+    matching: scoped.length,
+    price: {
+      min: prices.length ? Math.min(...prices) : 0,
+      max: prices.length ? Math.max(...prices) : PRICE_SLIDER_MAX,
+      slider_max: PRICE_SLIDER_MAX,
+      histogram: buildPriceHistogram(prices),
+    },
+  });
+});
+
 router.get('/outbound/candidates', async (req, res) => {
   const supabase = createSupabase();
   const limit = clamp(Number(req.query.limit || 10), 1, 50);
@@ -392,16 +437,11 @@ router.get('/outbound/candidates', async (req, res) => {
     });
   }
 
-  const { data, error } = await supabase
-    .from('nordkone_listings')
-    .select('*')
-    .eq('client_key', CLIENT_KEY)
-    .eq('status', 'eligible')
-    .not('normalized_phone', 'is', null)
-    .order('first_seen_at', { ascending: true })
-    .limit(Math.min(limit, remainingToday));
-
-  if (error) throw error;
+  const filters = parseOutboundFilters(config);
+  const listings = await loadEligibleListings(supabase, 2000);
+  const matched = listings
+    .filter((row) => listingMatchesOutboundFilters(row, filters))
+    .slice(0, Math.min(limit, remainingToday));
 
   res.json({
     control: {
@@ -409,9 +449,11 @@ router.get('/outbound/candidates', async (req, res) => {
       daily_cap: dailyCap,
       sent_today: sentToday,
       remaining_today: remainingToday,
-      reason: 'ok',
+      reason: matched.length ? 'ok' : 'no_matching_filters',
+      filters,
+      matching: listings.filter((row) => listingMatchesOutboundFilters(row, filters)).length,
     },
-    candidates: (data || []).map((row) => {
+    candidates: matched.map((row) => {
       const listing = listingRowToResponse(row);
       return {
         ...listing,
@@ -1127,15 +1169,40 @@ async function countSessions(supabase, { replied, interestStatus, sentSince } = 
   return count || 0;
 }
 
+async function loadEligibleListings(supabase, limit = 2000) {
+  const { data, error } = await supabase
+    .from('nordkone_listings')
+    .select('*')
+    .eq('client_key', CLIENT_KEY)
+    .eq('status', 'eligible')
+    .not('normalized_phone', 'is', null)
+    .order('first_seen_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+function buildPriceHistogram(prices, buckets = 16) {
+  const counts = Array.from({ length: buckets }, () => 0);
+  for (const price of prices) {
+    const ratio = Math.min(Math.max(price, 0), PRICE_SLIDER_MAX) / PRICE_SLIDER_MAX;
+    const index = Math.min(buckets - 1, Math.floor(ratio * buckets));
+    counts[index] += 1;
+  }
+  const peak = Math.max(1, ...counts);
+  return counts.map((count) => Number((count / peak).toFixed(3)));
+}
+
 async function loadCampaignConfig(supabase) {
   const { data, error } = await supabase
     .from('campaign_client_config')
-    .select('outbound_enabled,daily_cap,campaign_name')
+    .select('outbound_enabled,daily_cap,campaign_name,copy_variants')
     .eq('client_key', CLIENT_KEY)
     .maybeSingle();
 
   if (error) throw error;
-  return data || { outbound_enabled: false, daily_cap: 0, campaign_name: CAMPAIGN_NAME };
+  return data || { outbound_enabled: false, daily_cap: 0, campaign_name: CAMPAIGN_NAME, copy_variants: null };
 }
 
 function startOfTodayIso() {

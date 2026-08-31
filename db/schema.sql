@@ -25,6 +25,10 @@ values (
 )
 on conflict (client_key) do nothing;
 
+-- Outbound machine-class + price filters live in
+-- campaign_client_config.copy_variants.outbound_filters so the shared
+-- config table stays additive. Empty machine_classes means every class.
+
 create table if not exists public.nordkone_listings (
   id bigserial primary key,
   client_key text not null references public.campaign_client_config(client_key) on delete cascade,

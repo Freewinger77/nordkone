@@ -89,6 +89,7 @@ function isReadOnlyRequest(req) {
     '/api/conversations',
     '/api/calendar-calls',
     '/api/settings',
+    '/api/outbound',
   ];
 
   const mountedPrefixes = allowedPrefixes.map((prefix) => prefix.replace(/^\/api/, '') || '/');

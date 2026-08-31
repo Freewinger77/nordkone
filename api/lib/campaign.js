@@ -1,3 +1,5 @@
+import { classifyListing } from '../../shared/machine-class.js';
+
 export const CLIENT_KEY =
   process.env.CAMPAIGN_CLIENT_KEY || process.env.NORDKONE_CLIENT_KEY || 'nordkone';
 
@@ -20,6 +22,7 @@ export function listingRowToResponse(row = {}) {
     listing_type: row.listing_type,
     department: row.department,
     category: row.category,
+    machine_class: classifyListing(row),
     price_text: row.price_text,
     price_eur: row.price_eur,
     vat_text: row.vat_text,

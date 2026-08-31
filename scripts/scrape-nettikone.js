@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import * as cheerio from 'cheerio';
 import { firstValidPhone, extractPhoneCandidates } from '../api/lib/phone.js';
+import { classifyListing } from '../shared/machine-class.js';
 import { createSupabase, hasSupabaseConfig } from '../api/lib/supabase.js';
 import { CLIENT_KEY, SOURCE_SYSTEM } from '../api/lib/campaign.js';
 
@@ -332,7 +333,7 @@ async function scrapeListing(url, { category, timeoutMs }) {
   const facts = extractFacts($);
   const priceText = cleanPriceText(facts.Hinta) || extractPriceText($);
 
-  return {
+  const listing = {
     nettikone_id: nettikoneId,
     listing_url: url,
     canonical_url: canonicalUrl,
@@ -365,6 +366,10 @@ async function scrapeListing(url, { category, timeoutMs }) {
       scraped_at: new Date().toISOString(),
     },
   };
+
+  listing.machine_class = classifyListing(listing);
+  listing.raw_data.machine_class = listing.machine_class;
+  return listing;
 }
 
 async function upsertListing(supabase, listing, { existing } = {}) {
@@ -453,7 +458,7 @@ async function loadKnownListingIds(supabase) {
 async function loadExistingListing(supabase, nettikoneId) {
   const { data, error } = await supabase
     .from('nordkone_listings')
-    .select('id,prospect_id,status,first_seen_at,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason')
+    .select('id,prospect_id,status,first_seen_at,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason,raw_data')
     .eq('client_key', CLIENT_KEY)
     .eq('nettikone_id', nettikoneId)
     .maybeSingle();
@@ -528,7 +533,11 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     phone_source: listing.normalized_phone ? listing.phone_source : existing?.phone_source || listing.phone_source,
     status: existing?.status || (phone ? 'eligible' : 'ignored'),
     ineligible_reason: phone ? listing.ineligible_reason : existing?.ineligible_reason || listing.ineligible_reason,
-    raw_data: listing.raw_data,
+    raw_data: {
+      ...(existing?.raw_data && typeof existing.raw_data === 'object' ? existing.raw_data : {}),
+      ...(listing.raw_data || {}),
+      machine_class: listing.machine_class || listing.raw_data?.machine_class || classifyListing(listing),
+    },
     first_seen_at: existing?.first_seen_at || now,
     last_seen_at: now,
     updated_at: now,

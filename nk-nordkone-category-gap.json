@@ -198,19 +198,37 @@
       "missing": false
     }
   ],
-  "scrape_next": {
+  "scrape_done": {
+    "file": "nk-finland-missing-private.json",
     "posted_by": "S",
     "price_min": 5000,
     "country": "Finland",
-    "departments": [
-      "maatalouskoneet",
-      "kuljetuskalusto",
-      "metsakoneet",
-      "materiaalinkasittely",
-      "tyokoneet",
-      "ymparistokoneet"
-    ],
-    "expected_private_5k": 1813,
-    "import_to_desk": false
+    "imported_to_desk": false,
+    "total": 1788,
+    "with_phone": 1788,
+    "mobiles": 1787,
+    "unique_mobiles": 1572,
+    "new_mobiles_vs_construction": 1521,
+    "id_overlap_with_construction": 0,
+    "by_department": {
+      "maatalouskoneet": 926,
+      "kuljetuskalusto": 582,
+      "metsakoneet": 113,
+      "ymparistokoneet": 77,
+      "tyokoneet": 48,
+      "materiaalinkasittely": 42
+    },
+    "by_vehicle_type": {
+      "Tractors": 415,
+      "Trucks": 259,
+      "Trailers": 99,
+      "Trailers/Agriculture": 91,
+      "Forest and wood": 81,
+      "Forwarders": 27,
+      "Harvesters": 26,
+      "Forklift trucks": 30,
+      "Mini loaders": 19,
+      "Bus/Coach": 72
+    }
   }
 }

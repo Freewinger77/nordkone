@@ -736,7 +736,6 @@ function CalendarPage({ ctx }) {
             <div className="day-head">
               <span className="day-name">{day.name}</span>
               <span className="day-num">{day.num}</span>
-              {day.blocked ? <span className="day-block-tag">Blocked</span> : null}
             </div>
             <div className="day-body">
               {day.events.map((event) => (
@@ -746,7 +745,7 @@ function CalendarPage({ ctx }) {
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'Blocked' : 'No calls'}</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'No outbound on Sunday' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}
@@ -1499,7 +1498,6 @@ function MobileCalendar({ ctx }) {
             <div className="row" style={{ padding: '10px 0 8px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
               <span className="day-name">{day.name}</span>
               <span style={{ fontSize: 16, fontWeight: 600 }}>{day.num}</span>
-              {day.blocked ? <span className="day-block-tag">Blocked</span> : null}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {day.events.map((event) => (
@@ -1509,7 +1507,7 @@ function MobileCalendar({ ctx }) {
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'Blocked' : 'No calls'}</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'No outbound on Sunday' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}

@@ -3,7 +3,7 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
-import { isNeedsReviewReply, normalizeInboundClassification } from '../../shared/intent.js';
+import { isEmailOfferText, isNeedsReviewReply, isNoCallRequest, isWrittenChannelText, normalizeInboundClassification } from '../../shared/intent.js';
 import {
   MACHINE_CLASSES,
   PRICE_SLIDER_MAX,
@@ -251,6 +251,8 @@ router.get('/conversations', async (req, res) => {
       last_outbound_at: session.last_outbound_at,
       updated_at: session.updated_at,
       calendar_booking: calendarBooking,
+      calendar_action: session.raw_data?.calendar_action || listing?.raw_data?.calendar_action || null,
+      followup_channel: session.raw_data?.followup_channel || listing?.raw_data?.followup_channel || null,
       listing,
       messages,
       latest_message: messages[messages.length - 1] || null,
@@ -1038,8 +1040,19 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
 
   const latest = events[events.length - 1] || {};
   const latestInbound = latest.message || '';
-  const latestText = `${latestInbound} ${latest.raw_event?.reply_message || ''}`;
-  const reviewReply = Boolean(latestInbound && isNeedsReviewReply(latestInbound));
+  let meaningfulInbound = latestInbound;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const text = String(events[index].message || '').trim();
+    if (text && !/^(👍+|👌+|ok\.?|oki|okei|kiitos[a.]?|kiitoksia|joo|juu|selvä|selva)[\s!.]*$/i.test(text)) {
+      meaningfulInbound = text;
+      break;
+    }
+  }
+  const reviewReply = Boolean(meaningfulInbound && isNeedsReviewReply(meaningfulInbound));
+  const emailOffer = Boolean(
+    meaningfulInbound &&
+      (isEmailOfferText(meaningfulInbound) || isWrittenChannelText(meaningfulInbound) || isNoCallRequest(meaningfulInbound))
+  );
 
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';
@@ -1048,15 +1061,17 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
     return 'ready_for_call';
   }
   if (interest === 'needs_review' || latest.classification === 'needs_review') return 'needs_review';
+  if (emailOffer || reviewReply) return 'needs_review';
   if (interest === 'machine_available' || latest.classification === 'machine_available') return 'machine_available';
   if (
     !reviewReply &&
+    !emailOffer &&
     (listingStatus === 'not_interested' || sessionStatus === 'not_interested' || interest === 'not_interested')
   ) {
     return 'not_interested';
   }
   if (isActiveBooking(booking)) return 'booked';
-  if (reviewReply) return 'needs_review';
+  if (reviewReply || emailOffer) return 'needs_review';
   if (listingStatus === 'interested' || sessionStatus === 'interested' || interest === 'interested') {
     if (isReadyForCallText(latestInbound)) return 'ready_for_call';
     return 'interested';
@@ -1073,7 +1088,9 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
     return 'opt_out';
   }
   if (containsAny(fullText, ['ei kiinnosta', 'ei tarvetta', 'en tarvitse']) || events.some((event) => event.classification === 'not_interested')) {
-    return 'not_interested';
+    if (!events.some((event) => isEmailOfferText(event.message) || isNoCallRequest(event.message) || isNeedsReviewReply(event.message))) {
+      return 'not_interested';
+    }
   }
   if (isReadyForCallText(latestInbound)) return 'ready_for_call';
   if (isCommercialInterestText(fullText)) return 'interested';

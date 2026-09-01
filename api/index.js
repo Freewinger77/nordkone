@@ -6,6 +6,7 @@ import listingsRouter from './routes/listings.js';
 import settingsRouter from './routes/settings.js';
 import webhooksRouter from './routes/webhooks.js';
 import scrapeRouter from './routes/scrape.js';
+import authRouter from './routes/auth.js';
 import { hasSupabaseConfig } from './lib/supabase.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,8 +15,9 @@ const rootDir = path.resolve(__dirname, '..');
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: '2mb' }));
+  app.use('/api/auth', authRouter);
   app.use('/api', optionalApiKey);
 
   app.get('/api/health', (_req, res) => {
@@ -87,6 +89,7 @@ function isReadOnlyRequest(req) {
     '/api/conversations',
     '/api/calendar-calls',
     '/api/settings',
+    '/api/outbound',
   ];
 
   const mountedPrefixes = allowedPrefixes.map((prefix) => prefix.replace(/^\/api/, '') || '/');

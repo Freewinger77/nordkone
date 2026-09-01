@@ -127,6 +127,11 @@ if (week.days.flatMap((day) => day.events).some((event) => event.kind === 'booke
   console.error('week label should mention Call Now', week.count);
   failed += 1;
 }
+const sunday = week.days.find((day) => day.name === 'Sun');
+if (!sunday?.blocked || week.days.some((day) => day.name !== 'Sun' && day.blocked)) {
+  console.error('only Sunday should be a blocked calendar day', week.days.map((day) => ({ name: day.name, blocked: day.blocked })));
+  failed += 1;
+}
 
 const vFlow = buildVerticalFlow({
   eligible: 511,

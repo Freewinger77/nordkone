@@ -732,10 +732,11 @@ function CalendarPage({ ctx }) {
       </div>
       <div className="week-grid">
         {ctx.week.days.map((day) => (
-          <div className={`day-col ${day.today ? 'today' : ''}`} key={day.name}>
+          <div className={`day-col${day.today ? ' today' : ''}${day.blocked ? ' blocked' : ''}`} key={day.name}>
             <div className="day-head">
               <span className="day-name">{day.name}</span>
               <span className="day-num">{day.num}</span>
+              {day.blocked ? <span className="day-block-tag">Blocked</span> : null}
             </div>
             <div className="day-body">
               {day.events.map((event) => (
@@ -745,7 +746,7 @@ function CalendarPage({ ctx }) {
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'Blocked' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}
@@ -1494,10 +1495,11 @@ function MobileCalendar({ ctx }) {
       <button className="btn btn-ring" onClick={() => ctx.setWeekOffset(0)} style={{ width: '100%', marginTop: 10 }} type="button">Today</button>
       <div style={{ marginTop: 20 }}>
         {ctx.week.days.map((day) => (
-          <div key={day.name} style={{ paddingBottom: 14 }}>
+          <div key={day.name} className={day.blocked ? 'm-day blocked' : undefined} style={{ paddingBottom: 14 }}>
             <div className="row" style={{ padding: '10px 0 8px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
               <span className="day-name">{day.name}</span>
               <span style={{ fontSize: 16, fontWeight: 600 }}>{day.num}</span>
+              {day.blocked ? <span className="day-block-tag">Blocked</span> : null}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {day.events.map((event) => (
@@ -1507,7 +1509,7 @@ function MobileCalendar({ ctx }) {
                   <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'Blocked' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}
@@ -1754,7 +1756,7 @@ function CalendarSkeleton() {
         <div className="skel skel-line" style={{ width: 90, marginLeft: 12 }} />
       </div>
       <div className="week-grid">
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, index) => (
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
           <div className="day-col" key={day} style={{ animationDelay: `${index * 60}ms` }}>
             <div className="day-head">
               <div className="skel skel-line" style={{ width: 28 }} />

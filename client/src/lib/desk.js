@@ -152,9 +152,8 @@ export function buildWeek(offset, calls = [], callbacks = []) {
   const monday = startOfHelsinkiWeek(offset);
   const todayKey = helsinkiDateKey(new Date());
   const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weekdayCount = weekendVisible(monday, calls, todayKey, callbacks) ? 7 : 5;
 
-  const days = names.slice(0, weekdayCount).map((name, index) => {
+  const days = names.map((name, index) => {
     const date = new Date(monday);
     date.setUTCDate(monday.getUTCDate() + index);
     const key = helsinkiDateKey(date);
@@ -183,16 +182,17 @@ export function buildWeek(offset, calls = [], callbacks = []) {
       name,
       num: String(date.getUTCDate()),
       today: key === todayKey,
+      blocked: name === 'Sun',
       events,
     };
   });
 
   const first = days[0];
-  const last = days[4];
+  const last = days[days.length - 1];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const startMonth = monthNames[monday.getUTCMonth()];
   const endDate = new Date(monday);
-  endDate.setUTCDate(monday.getUTCDate() + 4);
+  endDate.setUTCDate(monday.getUTCDate() + 6);
   const endMonth = monthNames[endDate.getUTCMonth()];
   const label =
     startMonth === endMonth
@@ -502,19 +502,6 @@ function helsinkiDateKey(value) {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date(value));
-}
-
-function weekendVisible(monday, calls, todayKey, callbacks = []) {
-  return [5, 6].some((offset) => {
-    const date = new Date(monday);
-    date.setUTCDate(monday.getUTCDate() + offset);
-    const key = helsinkiDateKey(date);
-    return (
-      key === todayKey ||
-      calls.some((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key) ||
-      callbacks.some((lead) => lead.callbackAt && helsinkiDateKey(lead.callbackAt) === key)
-    );
-  });
 }
 
 function pct(part, whole) {

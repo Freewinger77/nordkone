@@ -438,6 +438,21 @@ if (commissionAsk.stage !== 'Callback' || commissionAsk.reviewSignal) {
   failed += 1;
 }
 
+const provikkaAsk = lead({
+  listing: { nettikone_id: 'volvo-ec300' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    last_inbound_at: '2026-09-01',
+    inbound_count: 2,
+    messages: [{ direction: 'inbound', classification: 'interested', message: 'Mikä provikka on' }],
+  },
+});
+if (provikkaAsk.stage !== 'Callback' || !provikkaAsk.callback) {
+  console.error('provikka ask should be Call Now', provikkaAsk.stage);
+  failed += 1;
+}
+
 const tarmoWait = lead({
   listing: { nettikone_id: 'tarmo' },
   conversation: {

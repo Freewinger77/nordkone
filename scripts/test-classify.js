@@ -1,5 +1,6 @@
 import {
   classifyInbound,
+  isBrokerageInterestText,
   isNeedsReviewReply,
   normalizeInboundClassification,
   persistableInboundClass,
@@ -21,6 +22,8 @@ expect('email ask review', isNeedsReviewReply('Ei käy. Laita kirjallisena sähk
 
 const hinnasto = 'Ok. Laita palkkio hinnasto niin katsotaan!';
 expect('hinnasto is not a review override', isNeedsReviewReply(hinnasto), false);
+expect('provikka is brokerage interest', isBrokerageInterestText('Mikä provikka on'), true);
+expect('välitys palkkio is brokerage interest', isBrokerageInterestText('Paljon välitys palkkio'), true);
 
 const hardNo = classifyInbound('Ei kiinnosta');
 expect('hard no class', hardNo.classification, 'not_interested');

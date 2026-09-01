@@ -20,7 +20,9 @@ export function isNeedsReviewReply(message = '') {
 }
 
 export function isBrokerageInterestText(message = '') {
-  return /(palkkio|provisio|välityspalkk|välitys\s*%|prosentteina|hinnasto)/i.test(String(message || ''));
+  return /(palkkio|provisio|provikka|proviska|välityspalkk|välitys\s*palkkio|välitys\s*%|prosentteina|hinnasto)/i.test(
+    String(message || '')
+  );
 }
 
 export function classifyInbound(message = '') {

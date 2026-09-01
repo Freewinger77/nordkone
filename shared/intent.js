@@ -1,5 +1,6 @@
 const HARD_NOT_INTERESTED_RE = /\b(ei kiinnosta|en myy|ei tarvetta|ei kiitos)\b/i;
-const WRITTEN_FOLLOWUP_RE = /(sähköpost|sahkopost|e-?mail|kirjallis)/i;
+const EMAIL_OFFER_RE = /(sähköpost|sahkopost|e-?mail)/i;
+const WRITTEN_WORD_RE = /kirjallis/i;
 const EMAIL_ADDRESS_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const NO_CALL_RE = /(ei soitella|älä soita|ala soita|ei puhel|en halua soit|ei sovi puhua|mieluummin kirjall)/i;
 const CALL_REJECT_RE = /\bei\s+k[aä]y\b/i;
@@ -14,13 +15,16 @@ const EMAIL_OFFER_STATUSES = new Set([
   'email_offer',
   'send_email',
 ]);
+const WRITTEN_STATUSES = new Set(['kirjallinen', 'kirjallisesti', 'written']);
+const WRITTEN_CHANNELS = new Set(['written', 'kirjallinen', 'whatsapp']);
 
 export function isHardNotInterested(message = '') {
   return HARD_NOT_INTERESTED_RE.test(String(message || ''));
 }
 
 export function isWrittenFollowupRequest(message = '') {
-  return WRITTEN_FOLLOWUP_RE.test(String(message || ''));
+  const text = String(message || '');
+  return EMAIL_OFFER_RE.test(text) || WRITTEN_WORD_RE.test(text) || EMAIL_ADDRESS_RE.test(text);
 }
 
 export function extractEmailAddress(message = '') {
@@ -30,7 +34,12 @@ export function extractEmailAddress(message = '') {
 
 export function isEmailOfferText(message = '') {
   const text = String(message || '');
-  return WRITTEN_FOLLOWUP_RE.test(text) || EMAIL_ADDRESS_RE.test(text);
+  return EMAIL_OFFER_RE.test(text) || EMAIL_ADDRESS_RE.test(text);
+}
+
+export function isWrittenChannelText(message = '') {
+  const text = String(message || '');
+  return WRITTEN_WORD_RE.test(text) && !isEmailOfferText(text);
 }
 
 export function isNoCallRequest(message = '') {
@@ -43,6 +52,14 @@ export function isSendEmailAction(value = '') {
 
 export function isEmailOfferLeadStatus(value = '') {
   return EMAIL_OFFER_STATUSES.has(String(value || '').trim().toLowerCase());
+}
+
+export function isKirjallinenLeadStatus(value = '') {
+  return WRITTEN_STATUSES.has(String(value || '').trim().toLowerCase());
+}
+
+export function isWrittenFollowupChannel(value = '') {
+  return WRITTEN_CHANNELS.has(String(value || '').trim().toLowerCase());
 }
 
 export function isNeedsReviewReply(message = '') {

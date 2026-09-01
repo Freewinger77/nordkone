@@ -6,9 +6,12 @@ import {
   extractEmailAddress,
   isEmailOfferLeadStatus,
   isEmailOfferText,
+  isKirjallinenLeadStatus,
   isNeedsReviewReply,
   isNoCallRequest,
   isSendEmailAction,
+  isWrittenChannelText,
+  isWrittenFollowupChannel,
   listingStatusFromClass,
   normalizeInboundClassification,
   persistableInboundClass,
@@ -43,10 +46,17 @@ router.post('/wasup/inbound', async (req, res) => {
     isEmailOfferLeadStatus(payload.lead_status) ||
     isEmailOfferLeadStatus(providedClassification) ||
     isSendEmailAction(calendarAction) ||
-    isEmailOfferText(message) ||
+    isEmailOfferText(message);
+  const writtenFollowup =
+    emailOffer ||
+    isKirjallinenLeadStatus(payload.lead_status) ||
+    isKirjallinenLeadStatus(providedClassification) ||
+    isWrittenFollowupChannel(payload.followup_channel) ||
+    isWrittenFollowupChannel(calendarAction) ||
+    isWrittenChannelText(message) ||
     isNoCallRequest(message);
 
-  if (emailOffer || (classification === 'not_interested' && isNeedsReviewReply(message))) {
+  if (writtenFollowup || (classification === 'not_interested' && isNeedsReviewReply(message))) {
     classification = 'needs_review';
     needsHuman = true;
   }
@@ -86,7 +96,8 @@ router.post('/wasup/inbound', async (req, res) => {
     const now = new Date().toISOString();
     const rawData = attachInboundSignals(session.raw_data || {}, payload, req.body, classification, now, message);
     const booked = classification === 'booked' || Boolean(rawData.calendar_booking && classification === 'booked');
-    const emailReview = rawData.desk_status === 'Review' && ['email', 'written'].includes(rawData.followup_channel);
+    const emailReview =
+      rawData.desk_status === 'Review' && ['email', 'written', 'kirjallinen'].includes(rawData.followup_channel);
 
     await supabase
       .from('campaign_outbound_sessions')
@@ -178,21 +189,23 @@ function attachInboundSignals(rawData, payload, body, classification, now, messa
     call_start: payload.call_start || body.call_start || rawData.call_start || null,
   };
 
-  const emailAsk =
-    classification === 'needs_review' &&
-    (isEmailOfferLeadStatus(payload.lead_status) ||
-      isSendEmailAction(next.calendar_action) ||
-      isEmailOfferText(message) ||
-      isNoCallRequest(message));
+  const sendEmail =
+    isEmailOfferLeadStatus(payload.lead_status) ||
+    isSendEmailAction(payload.calendar_action || body.calendar_action) ||
+    isEmailOfferText(message) ||
+    Boolean(extractEmailAddress(message));
+  const writtenFollowup =
+    sendEmail ||
+    isKirjallinenLeadStatus(payload.lead_status) ||
+    isWrittenFollowupChannel(payload.followup_channel) ||
+    isWrittenChannelText(message) ||
+    isNoCallRequest(message);
 
-  if (emailAsk) {
-    const sendEmail =
-      isEmailOfferText(message) ||
-      extractEmailAddress(message) ||
-      isSendEmailAction(payload.calendar_action || body.calendar_action) ||
-      isEmailOfferLeadStatus(payload.lead_status);
-    next.calendar_action = sendEmail ? 'send_email' : next.calendar_action || 'none';
-    next.followup_channel = sendEmail ? 'email' : 'written';
+  if (classification === 'needs_review' && writtenFollowup) {
+    next.calendar_action = sendEmail ? 'send_email' : payload.calendar_action || body.calendar_action || next.calendar_action || 'none';
+    next.followup_channel =
+      payload.followup_channel ||
+      (sendEmail ? 'email' : 'kirjallinen');
     next.email_address = payload.email_address || extractEmailAddress(message) || rawData.email_address || null;
     if (!['Booked', 'Call Now', 'Callback', 'Deal Won', 'Deal Lost'].includes(rawData.desk_status)) {
       next.desk_status = 'Review';

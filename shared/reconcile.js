@@ -2,9 +2,12 @@ import {
   isBrokerageInterestText,
   isEmailOfferLeadStatus,
   isEmailOfferText,
+  isKirjallinenLeadStatus,
   isNeedsReviewReply,
   isNoCallRequest,
   isSendEmailAction,
+  isWrittenChannelText,
+  isWrittenFollowupChannel,
 } from './intent.js';
 
 const DESK_LABELS = new Set([
@@ -97,14 +100,13 @@ function latestInboundText(conversation = {}) {
   return last.message || last.text || last.body || '';
 }
 
-function wantsEmailOffer(conversation = {}, lastInboundText = '') {
-  if (isSendEmailAction(conversation.calendar_action) || isSendEmailAction(conversation.raw_data?.calendar_action)) {
-    return true;
-  }
-  if (isEmailOfferLeadStatus(conversation.raw_data?.lead_status) || isEmailOfferLeadStatus(conversation.lead_status)) {
-    return true;
-  }
-  return isEmailOfferText(lastInboundText) || isNoCallRequest(lastInboundText);
+function wantsWrittenReview(conversation = {}, lastInboundText = '') {
+  const leadStatus = conversation.raw_data?.lead_status || conversation.lead_status;
+  const channel = conversation.followup_channel || conversation.raw_data?.followup_channel;
+  const action = conversation.calendar_action || conversation.raw_data?.calendar_action;
+  if (isSendEmailAction(action) || isEmailOfferLeadStatus(leadStatus)) return true;
+  if (isKirjallinenLeadStatus(leadStatus) || isWrittenFollowupChannel(channel)) return true;
+  return isEmailOfferText(lastInboundText) || isWrittenChannelText(lastInboundText) || isNoCallRequest(lastInboundText);
 }
 
 export function reconcileLead({ listing = {}, conversation = {}, calendarCalls = [], now = Date.now() } = {}) {
@@ -117,7 +119,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const inbound = hasInbound(conversation);
   const lastInboundText = latestInboundText(conversation);
   const reviewReply = inbound && isNeedsReviewReply(lastInboundText);
-  const emailOffer = inbound && wantsEmailOffer(conversation, lastInboundText);
+  const emailOffer = inbound && wantsWrittenReview(conversation, lastInboundText);
   const brokerageAsk = inbound && isBrokerageInterestText(lastInboundText);
 
   const booking =

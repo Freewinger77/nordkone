@@ -388,6 +388,23 @@ if (n8nSendEmail.stage !== 'Review' || !n8nSendEmail.emailOffer) {
   failed += 1;
 }
 
+const n8nKirjallinen = lead({
+  listing: { nettikone_id: 'written-n8n' },
+  conversation: {
+    status: 'needs_human',
+    interest_status: 'needs_review',
+    lead_status: 'kirjallinen',
+    followup_channel: 'kirjallinen',
+    last_inbound_at: '2026-09-01',
+    inbound_count: 1,
+    messages: [{ direction: 'inbound', classification: 'needs_review', message: 'Voidaanko keskustella mieluummin kirjallisesti' }],
+  },
+});
+if (n8nKirjallinen.stage !== 'Review') {
+  console.error('n8n kirjallinen should land in Review', n8nKirjallinen);
+  failed += 1;
+}
+
 const yanmarMovedOn = lead({
   listing: { nettikone_id: '2656968' },
   conversation: {

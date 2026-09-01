@@ -3,8 +3,10 @@ import {
   extractEmailAddress,
   isBrokerageInterestText,
   isEmailOfferText,
+  isKirjallinenLeadStatus,
   isNeedsReviewReply,
   isNoCallRequest,
+  isWrittenChannelText,
   normalizeInboundClassification,
   persistableInboundClass,
 } from '../shared/intent.js';
@@ -30,6 +32,11 @@ expect('no call detect', isNoCallRequest('Ei soitella kiitos'), true);
 expect('written no phone is review', isNeedsReviewReply('Minulle ei sovi puhua puhelimessa juuri nyt. Voidaanko keskustella mieluummin kirjallisesti'), true);
 expect('at work delay is not email', isEmailOfferText('Töissä en voi puhua'), false);
 expect('at work delay is not no-call bucket', isNoCallRequest('Töissä en voi puhua'), false);
+expect('yanmar written is not email', isEmailOfferText('Voidaanko keskustella mieluummin kirjallisesti'), false);
+expect('yanmar written is written channel', isWrittenChannelText('Voidaanko keskustella mieluummin kirjallisesti'), true);
+expect('kirjallinen status', isKirjallinenLeadStatus('kirjallinen'), true);
+expect('email + kirjallisena is still email', isEmailOfferText('Laita kirjallisena sähköpostiin kiitos.'), true);
+expect('email + kirjallisena is not written-only', isWrittenChannelText('Laita kirjallisena sähköpostiin kiitos.'), false);
 
 const hinnasto = 'Ok. Laita palkkio hinnasto niin katsotaan!';
 expect('hinnasto is not a review override', isNeedsReviewReply(hinnasto), false);

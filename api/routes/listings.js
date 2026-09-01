@@ -3,7 +3,7 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
-import { isEmailOfferText, isNeedsReviewReply, isNoCallRequest, normalizeInboundClassification } from '../../shared/intent.js';
+import { isEmailOfferText, isNeedsReviewReply, isNoCallRequest, isWrittenChannelText, normalizeInboundClassification } from '../../shared/intent.js';
 import {
   MACHINE_CLASSES,
   PRICE_SLIDER_MAX,
@@ -1049,7 +1049,10 @@ function deriveLeadStatus({ listing = {}, session = {}, events = [] } = {}) {
     }
   }
   const reviewReply = Boolean(meaningfulInbound && isNeedsReviewReply(meaningfulInbound));
-  const emailOffer = Boolean(meaningfulInbound && (isEmailOfferText(meaningfulInbound) || isNoCallRequest(meaningfulInbound)));
+  const emailOffer = Boolean(
+    meaningfulInbound &&
+      (isEmailOfferText(meaningfulInbound) || isWrittenChannelText(meaningfulInbound) || isNoCallRequest(meaningfulInbound))
+  );
 
   if (listingStatus === 'opted_out' || sessionStatus === 'opted_out' || interest === 'opted_out') return 'opt_out';
   if (listingStatus === 'sold' || sessionStatus === 'sold' || interest === 'sold') return 'sold';

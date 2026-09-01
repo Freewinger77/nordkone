@@ -3,7 +3,12 @@ import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
 import {
   classifyInbound,
+  extractEmailAddress,
+  isEmailOfferLeadStatus,
+  isEmailOfferText,
   isNeedsReviewReply,
+  isNoCallRequest,
+  isSendEmailAction,
   listingStatusFromClass,
   normalizeInboundClassification,
   persistableInboundClass,
@@ -27,13 +32,21 @@ router.post('/wasup/inbound', async (req, res) => {
   const providedClassification =
     payload.classification || payload.lead_status || req.body?.classification || req.body?.lead_status;
   const fallback = classifyInbound(message);
+  const calendarAction = payload.calendar_action || req.body?.calendar_action || payload.followup_channel;
   let classification = normalizeInboundClassification(providedClassification) || fallback.classification;
   let needsHuman =
     typeof payload.needs_human === 'boolean'
       ? payload.needs_human
       : shouldForceNeedsHuman(classification);
 
-  if (classification === 'not_interested' && isNeedsReviewReply(message)) {
+  const emailOffer =
+    isEmailOfferLeadStatus(payload.lead_status) ||
+    isEmailOfferLeadStatus(providedClassification) ||
+    isSendEmailAction(calendarAction) ||
+    isEmailOfferText(message) ||
+    isNoCallRequest(message);
+
+  if (emailOffer || (classification === 'not_interested' && isNeedsReviewReply(message))) {
     classification = 'needs_review';
     needsHuman = true;
   }
@@ -71,8 +84,9 @@ router.post('/wasup/inbound', async (req, res) => {
 
   if (session) {
     const now = new Date().toISOString();
-    const rawData = attachInboundSignals(session.raw_data || {}, payload, req.body, classification, now);
+    const rawData = attachInboundSignals(session.raw_data || {}, payload, req.body, classification, now, message);
     const booked = classification === 'booked' || Boolean(rawData.calendar_booking && classification === 'booked');
+    const emailReview = rawData.desk_status === 'Review' && ['email', 'written'].includes(rawData.followup_channel);
 
     await supabase
       .from('campaign_outbound_sessions')
@@ -107,6 +121,24 @@ router.post('/wasup/inbound', async (req, res) => {
           desk_status_updated_at: now,
           calendar_booking: rawData.calendar_booking || listing?.raw_data?.calendar_booking || null,
         };
+      } else if (emailReview && !['Booked', 'Call Now', 'Callback', 'Deal Won', 'Deal Lost'].includes(session.raw_data?.desk_status)) {
+        const { data: listing } = await supabase
+          .from('nordkone_listings')
+          .select('raw_data')
+          .eq('client_key', CLIENT_KEY)
+          .eq('nettikone_id', session.source_customer_id)
+          .maybeSingle();
+        const currentDesk = listing?.raw_data?.desk_status;
+        if (!['Booked', 'Call Now', 'Callback', 'Deal Won', 'Deal Lost'].includes(currentDesk)) {
+          listingPatch.raw_data = {
+            ...(listing?.raw_data || {}),
+            desk_status: 'Review',
+            desk_status_updated_at: now,
+            calendar_action: rawData.calendar_action,
+            followup_channel: rawData.followup_channel,
+            email_address: rawData.email_address || listing?.raw_data?.email_address || null,
+          };
+        }
       }
 
       await supabase
@@ -137,7 +169,7 @@ router.post('/wasup/inbound', async (req, res) => {
   });
 });
 
-function attachInboundSignals(rawData, payload, body, classification, now) {
+function attachInboundSignals(rawData, payload, body, classification, now, message = '') {
   const next = {
     ...rawData,
     lead_status: payload.lead_status || classification,
@@ -145,6 +177,28 @@ function attachInboundSignals(rawData, payload, body, classification, now) {
     call_time_text: payload.call_time_text || body.call_time_text || rawData.call_time_text || null,
     call_start: payload.call_start || body.call_start || rawData.call_start || null,
   };
+
+  const emailAsk =
+    classification === 'needs_review' &&
+    (isEmailOfferLeadStatus(payload.lead_status) ||
+      isSendEmailAction(next.calendar_action) ||
+      isEmailOfferText(message) ||
+      isNoCallRequest(message));
+
+  if (emailAsk) {
+    const sendEmail =
+      isEmailOfferText(message) ||
+      extractEmailAddress(message) ||
+      isSendEmailAction(payload.calendar_action || body.calendar_action) ||
+      isEmailOfferLeadStatus(payload.lead_status);
+    next.calendar_action = sendEmail ? 'send_email' : next.calendar_action || 'none';
+    next.followup_channel = sendEmail ? 'email' : 'written';
+    next.email_address = payload.email_address || extractEmailAddress(message) || rawData.email_address || null;
+    if (!['Booked', 'Call Now', 'Callback', 'Deal Won', 'Deal Lost'].includes(rawData.desk_status)) {
+      next.desk_status = 'Review';
+      next.desk_status_updated_at = now;
+    }
+  }
 
   const eventId =
     payload.event_id ||

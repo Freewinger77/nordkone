@@ -1,4 +1,11 @@
-import { isBrokerageInterestText, isNeedsReviewReply } from './intent.js';
+import {
+  isBrokerageInterestText,
+  isEmailOfferLeadStatus,
+  isEmailOfferText,
+  isNeedsReviewReply,
+  isNoCallRequest,
+  isSendEmailAction,
+} from './intent.js';
 
 const DESK_LABELS = new Set([
   'Interested',
@@ -17,6 +24,8 @@ const DESK_LABELS = new Set([
 
 const SOFT_DESK_LABELS = new Set(['Review', 'No Answer', 'Callback', 'Call Now', 'Interested', 'Replied']);
 const THIN_DESK_LABELS = new Set(['Callback', 'Call Now', 'Interested']);
+const EMAIL_SOFT_DESK = new Set(['Interested', 'Not Interested', 'Replied', 'No Answer', 'Review']);
+const ACK_ONLY_RE = /^(👍+|👌+|ok\.?|oki|okei|kiitos[a.]?|kiitoksia|joo|juu|selvä|selva)[\s!.]*$/i;
 
 const STALE_BOOKING_MS = 14 * 24 * 60 * 60 * 1000;
 const CALLBACK_MESSAGE_MIN = 5;
@@ -69,19 +78,33 @@ export function isDeepConversation(conversation = {}) {
   return conversationDepth(conversation) >= CALLBACK_MESSAGE_MIN;
 }
 
-function latestInbound(conversation = {}) {
+function latestMeaningfulInbound(conversation = {}) {
   const inbound = (conversation.messages || []).filter((message) => message.direction === 'inbound');
+  for (let index = inbound.length - 1; index >= 0; index -= 1) {
+    const text = inbound[index].message || inbound[index].text || inbound[index].body || '';
+    if (text.trim() && !ACK_ONLY_RE.test(text.trim())) return inbound[index];
+  }
   return inbound.at(-1) || {};
 }
 
 function latestClassification(conversation = {}) {
-  const last = latestInbound(conversation);
+  const last = latestMeaningfulInbound(conversation);
   return norm(last.classification || conversation.interest_status);
 }
 
 function latestInboundText(conversation = {}) {
-  const last = latestInbound(conversation);
+  const last = latestMeaningfulInbound(conversation);
   return last.message || last.text || last.body || '';
+}
+
+function wantsEmailOffer(conversation = {}, lastInboundText = '') {
+  if (isSendEmailAction(conversation.calendar_action) || isSendEmailAction(conversation.raw_data?.calendar_action)) {
+    return true;
+  }
+  if (isEmailOfferLeadStatus(conversation.raw_data?.lead_status) || isEmailOfferLeadStatus(conversation.lead_status)) {
+    return true;
+  }
+  return isEmailOfferText(lastInboundText) || isNoCallRequest(lastInboundText);
 }
 
 export function reconcileLead({ listing = {}, conversation = {}, calendarCalls = [], now = Date.now() } = {}) {
@@ -94,6 +117,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
   const inbound = hasInbound(conversation);
   const lastInboundText = latestInboundText(conversation);
   const reviewReply = inbound && isNeedsReviewReply(lastInboundText);
+  const emailOffer = inbound && wantsEmailOffer(conversation, lastInboundText);
   const brokerageAsk = inbound && isBrokerageInterestText(lastInboundText);
 
   const booking =
@@ -133,6 +157,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     classified === 'opted_out';
   const notInterested =
     !reviewReply &&
+    !emailOffer &&
     (listingStatus === 'not_interested' ||
       sessionStatus === 'not_interested' ||
       interest === 'not_interested' ||
@@ -161,13 +186,15 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     desk &&
     DESK_LABELS.has(desk) &&
     !(bookedSignal && SOFT_DESK_LABELS.has(desk)) &&
-    !(THIN_DESK_LABELS.has(desk) && !deep && !bookedSignal);
+    !(THIN_DESK_LABELS.has(desk) && !deep && !bookedSignal) &&
+    !(emailOffer && EMAIL_SOFT_DESK.has(desk));
   if (deskWins && desk === 'Interested' && deep && !bookedSignal) stage = 'Callback';
   else if (deskWins && desk === 'Call Now') stage = 'Callback';
   else if (deskWins && desk === 'Lost / Sold') stage = 'Deal Lost';
   else if (deskWins) stage = desk;
   else if (opted) stage = 'Opted Out';
   else if (sold) stage = 'Deal Lost';
+  else if (emailOffer) stage = 'Review';
   else if (notInterested) stage = 'Not Interested';
   else if (bookedSignal || classified === 'booked') stage = 'Booked';
   else if (callbackSignal || brokerageAsk) stage = 'Callback';
@@ -200,6 +227,7 @@ export function reconcileLead({ listing = {}, conversation = {}, calendarCalls =
     interestedSignal,
     notInterestedSignal: !sold && (notInterested || opted),
     reviewSignal: stage === 'Review',
+    emailOffer,
     won,
     lost,
     booked,

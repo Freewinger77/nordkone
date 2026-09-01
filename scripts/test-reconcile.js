@@ -345,6 +345,68 @@ if (emailReview.stage !== 'Review') {
   failed += 1;
 }
 
+const emailThenAck = lead({
+  listing: { nettikone_id: '2656853', desk_status: 'Interested', status: 'interested' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'Interested',
+    desk_status: 'Interested',
+    last_inbound_at: '2026-09-01',
+    inbound_count: 5,
+    outbound_count: 4,
+    messages: [
+      { direction: 'outbound' },
+      { direction: 'inbound', classification: 'unclear', message: 'Moi, on kyllä' },
+      { direction: 'outbound' },
+      { direction: 'inbound', classification: 'interested', message: 'Okei, laitatko ehdot' },
+      { direction: 'outbound' },
+      { direction: 'inbound', classification: 'needs_human', message: 'Vaikka sähköpostilla myynti@mktek.fi' },
+      { direction: 'outbound' },
+      { direction: 'inbound', classification: 'needs_human', message: 'Ei soitella kiitos' },
+      { direction: 'inbound', classification: 'needs_human', message: '👍' },
+    ],
+  },
+});
+if (emailThenAck.stage !== 'Review' || !emailThenAck.emailOffer) {
+  console.error('email + no-call then thumbs-up should stay Review even if marked Interested', emailThenAck);
+  failed += 1;
+}
+
+const n8nSendEmail = lead({
+  listing: { nettikone_id: 'email-n8n' },
+  conversation: {
+    status: 'needs_human',
+    interest_status: 'needs_review',
+    calendar_action: 'send_email',
+    last_inbound_at: '2026-09-01',
+    inbound_count: 2,
+    messages: [{ direction: 'inbound', classification: 'needs_review', message: 'Laita tarjous sähköpostiin' }],
+  },
+});
+if (n8nSendEmail.stage !== 'Review' || !n8nSendEmail.emailOffer) {
+  console.error('n8n send_email should land in Review', n8nSendEmail);
+  failed += 1;
+}
+
+const yanmarMovedOn = lead({
+  listing: { nettikone_id: '2656968' },
+  conversation: {
+    status: 'interested',
+    interest_status: 'interested',
+    last_inbound_at: '2026-08-31',
+    inbound_count: 5,
+    outbound_count: 4,
+    messages: [
+      { direction: 'inbound', classification: 'needs_human', message: 'Minulle ei sovi puhua puhelimessa juuri nyt. Voidaanko keskustella mieluummin kirjallisesti' },
+      { direction: 'inbound', classification: 'interested', message: '12 000 € sopii minulle.' },
+    ],
+  },
+});
+if (yanmarMovedOn.stage === 'Review') {
+  console.error('later commercial yes after a written ask should not stay stuck in Review', yanmarMovedOn);
+  failed += 1;
+}
+
 const hardNo = lead({
   listing: { nettikone_id: 'hard-no', status: 'not_interested' },
   conversation: {

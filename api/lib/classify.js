@@ -1,7 +1,12 @@
 export {
   classifyInbound,
+  extractEmailAddress,
+  isEmailOfferLeadStatus,
+  isEmailOfferText,
   isHardNotInterested,
   isNeedsReviewReply,
+  isNoCallRequest,
+  isSendEmailAction,
   isWrittenFollowupRequest,
   listingStatusFromClass,
   normalizeInboundClassification,

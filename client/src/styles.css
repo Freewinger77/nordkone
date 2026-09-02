@@ -1238,8 +1238,35 @@ button {
   padding: 18px 20px 28px;
 }
 
-.call-facts { gap: 8px; }
-.call-facts .field dt { width: 92px; }
+.call-facts { gap: 6px; }
+.call-facts .field dt { width: 118px; }
+.call-facts .field dd { text-align: left; }
+
+.call-labels { display: flex; flex-direction: column; gap: 8px; }
+.call-label-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.call-chip {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 80px;
+  background: rgb(245, 245, 246);
+  font-size: 13px;
+  line-height: 28px;
+  color: rgb(0, 0, 0);
+}
+button.call-chip { cursor: pointer; }
+button.call-chip:hover { background: rgb(236, 236, 238); }
+.call-chip.muted { color: rgba(0, 0, 0, 0.4); }
+.call-chip.add { background: rgb(245, 245, 246); }
+.call-label-form input {
+  height: 28px;
+  width: 132px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 80px;
+  background: rgb(245, 245, 246);
+  font-size: 13px;
+}
 
 .call-log-block,
 .call-activity {
@@ -1318,21 +1345,33 @@ button {
 }
 
 .call-dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 6px;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
 }
-.call-dot.call { background: rgb(28, 28, 30); }
-.call-dot.reply { background: rgb(76, 152, 253); }
-.call-dot.out { background: rgb(113, 221, 140); }
+
+.call-activity-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
 
 .call-activity-title {
   font-size: 14px;
   line-height: 20px;
   text-wrap: pretty;
+}
+
+.call-activity-row .muted {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .sheet .call-panel { padding: 4px 0 12px; }

@@ -147,5 +147,69 @@ export function listingCallFields(row = {}) {
     callback_at: row.callback_at || raw.callback_at || null,
     last_call_at: row.last_call_at || raw.last_call_at || null,
     last_call_outcome: row.last_call_outcome || raw.last_call_outcome || null,
+    labels: normalizeLabels(row.labels || raw.labels),
   };
+}
+
+export const LABEL_MAX = 12;
+export const LABEL_MAX_LEN = 24;
+
+export function normalizeLabel(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, LABEL_MAX_LEN);
+}
+
+export function normalizeLabels(values) {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set();
+  const labels = [];
+  for (const value of values) {
+    const label = normalizeLabel(value);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
+    if (labels.length >= LABEL_MAX) break;
+  }
+  return labels;
+}
+
+export function applyLabels({ listing = {}, add = null, remove = null } = {}) {
+  const raw = { ...(listing.raw_data || {}) };
+  let labels = normalizeLabels(raw.labels || listing.labels);
+  const drop = normalizeLabel(remove);
+  if (drop) labels = labels.filter((label) => label.toLowerCase() !== drop.toLowerCase());
+  const next = normalizeLabel(add);
+  if (next && !labels.some((label) => label.toLowerCase() === next.toLowerCase())) {
+    if (labels.length >= LABEL_MAX) {
+      const error = new Error('Too many labels');
+      error.status = 400;
+      throw error;
+    }
+    labels.push(next);
+  }
+  if (!drop && !next) {
+    const error = new Error('Add or remove a label');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    labels,
+    raw_data: { ...raw, labels },
+  };
+}
+
+export function formatActivityWhen(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return String(value);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/Helsinki',
+  }).formatToParts(date);
+  const pick = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${pick('day')} ${pick('month')}, ${pick('hour')}:${pick('minute')}`;
 }

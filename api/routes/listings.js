@@ -11,7 +11,7 @@ import {
   listingMatchesOutboundFilters,
   parseOutboundFilters,
 } from '../../shared/machine-class.js';
-import { applyCallLog } from '../../shared/call-log.js';
+import { applyCallLog, applyLabels } from '../../shared/call-log.js';
 
 const router = Router();
 
@@ -151,6 +151,23 @@ router.post('/leads/call', async (req, res) => {
   res.json({ listing: listingRowToResponse(updated), entry: applied.entry });
 });
 
+router.post('/leads/labels', async (req, res) => {
+  const supabase = createSupabase();
+  const listing = await loadListing(supabase, {
+    listing_id: req.body?.listing_id,
+    nettikone_id: req.body?.nettikone_id || req.body?.source_customer_id,
+  });
+
+  const applied = applyLabels({
+    listing,
+    add: req.body?.add,
+    remove: req.body?.remove,
+  });
+  const now = new Date().toISOString();
+  const updated = await persistListingRaw(supabase, listing, applied.raw_data, now);
+  res.json({ listing: listingRowToResponse(updated), labels: applied.labels });
+});
+
 router.get('/interested', async (_req, res) => {
   const supabase = createSupabase();
   const { data, error } = await supabase
@@ -232,6 +249,7 @@ router.get('/conversations', async (req, res) => {
       call_log: listing?.call_log || session.raw_data?.call_log || [],
       callback_at: listing?.callback_at || session.raw_data?.callback_at || null,
       last_call_at: listing?.last_call_at || session.raw_data?.last_call_at || null,
+      labels: listing?.labels || session.raw_data?.labels || [],
       updated_at: session.updated_at,
       calendar_booking: calendarBooking,
       calendar_action: session.raw_data?.calendar_action || listing?.raw_data?.calendar_action || null,
@@ -904,6 +922,46 @@ async function loadListing(supabase, { listing_id, nettikone_id }) {
   return data;
 }
 
+async function persistListingRaw(supabase, listing, rawData, now) {
+  const { data: updated, error } = await supabase
+    .from('nordkone_listings')
+    .update({
+      raw_data: rawData,
+      updated_at: now,
+    })
+    .eq('id', listing.id)
+    .eq('client_key', CLIENT_KEY)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const { data: session } = await supabase
+    .from('campaign_outbound_sessions')
+    .select('id')
+    .eq('client_key', CLIENT_KEY)
+    .eq('source_system', SOURCE_SYSTEM)
+    .eq('source_customer_id', listing.nettikone_id)
+    .maybeSingle();
+
+  if (session?.id) {
+    const sessionRaw = (await loadSessionRaw(supabase, session.id)) || {};
+    await supabase
+      .from('campaign_outbound_sessions')
+      .update({
+        raw_data: {
+          ...sessionRaw,
+          labels: rawData.labels,
+        },
+        updated_at: now,
+      })
+      .eq('id', session.id)
+      .eq('client_key', CLIENT_KEY);
+  }
+
+  return updated;
+}
+
 async function persistListingDesk(supabase, listing, { deskStatus, rawData, now }) {
   const listingStatus = deskStatusToListingStatus(deskStatus);
   if (!listingStatus) {
@@ -960,6 +1018,7 @@ async function persistListingDesk(supabase, listing, { deskStatus, rawData, now 
           callback_at: rawData.callback_at ?? sessionRaw.callback_at,
           last_call_at: rawData.last_call_at || sessionRaw.last_call_at,
           last_call_outcome: rawData.last_call_outcome || sessionRaw.last_call_outcome,
+          labels: rawData.labels || sessionRaw.labels,
         },
         updated_at: now,
       })

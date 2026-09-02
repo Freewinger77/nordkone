@@ -34,7 +34,7 @@ import {
 import { Login } from './Login.jsx';
 import { PriceSlider } from './lib/PriceSlider.jsx';
 import { machineClassMeta } from '../../shared/machine-class.js';
-import { CALL_OUTCOMES, listingCallFields, mergeActivity } from '../../shared/call-log.js';
+import { CALL_OUTCOMES, formatActivityWhen, listingCallFields, mergeActivity } from '../../shared/call-log.js';
 import './styles.css';
 
 const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
@@ -325,6 +325,20 @@ function App() {
     await load();
   }
 
+  async function saveLabels(lead, { add = null, remove = null } = {}) {
+    if (!canUseControls || !lead?.listingId) return;
+    setError('');
+    await apiSend('/api/leads/labels', {
+      method: 'POST',
+      body: {
+        nettikone_id: lead.listingId,
+        add,
+        remove,
+      },
+    });
+    await load();
+  }
+
   async function sendListing(listing) {
     if (!canUseControls || !listing?.normalized_phone) return;
     setSending(true);
@@ -492,6 +506,7 @@ function App() {
     setCapDraft,
     setDeskStatus,
     logCall,
+    saveLabels,
     setLeadTab,
     setMenuFor,
     setPage,
@@ -1004,7 +1019,10 @@ function CallPanel({ ctx, lead }) {
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const [addingLabel, setAddingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
   const activity = mergeActivity(lead.msgs, lead.callLog);
+  const labels = lead.labels || [];
 
   async function save(snooze) {
     if (!ctx.canUseControls) return;
@@ -1026,6 +1044,38 @@ function CallPanel({ ctx, lead }) {
     }
   }
 
+  async function submitLabel(event) {
+    event?.preventDefault?.();
+    const value = labelDraft.trim();
+    if (!value || !ctx.canUseControls) {
+      setAddingLabel(false);
+      setLabelDraft('');
+      return;
+    }
+    setBusy(true);
+    try {
+      await ctx.saveLabels(lead, { add: value });
+      setLabelDraft('');
+      setAddingLabel(false);
+    } catch (error) {
+      setNote(error.message || 'Could not add the label.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeLabel(label) {
+    if (!ctx.canUseControls) return;
+    setBusy(true);
+    try {
+      await ctx.saveLabels(lead, { remove: label });
+    } catch (error) {
+      setNote(error.message || 'Could not remove the label.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="call-panel">
       <dl className="fields call-facts">
@@ -1036,6 +1086,56 @@ function CallPanel({ ctx, lead }) {
           </div>
         ))}
       </dl>
+      <div className="call-labels">
+        <div className="eyebrow">Labels</div>
+        <div className="call-label-row">
+          {labels.length ? labels.map((label) => (
+            <button
+              className="call-chip"
+              disabled={busy || !ctx.canUseControls}
+              key={label}
+              onClick={() => removeLabel(label)}
+              type="button"
+            >
+              {label}
+            </button>
+          )) : (
+            <span className="call-chip muted">No labels yet</span>
+          )}
+          {addingLabel ? (
+            <form className="call-label-form" onSubmit={submitLabel}>
+              <input
+                autoFocus
+                disabled={busy}
+                maxLength={24}
+                onBlur={() => {
+                  if (!labelDraft.trim()) {
+                    setAddingLabel(false);
+                  }
+                }}
+                onChange={(event) => setLabelDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setAddingLabel(false);
+                    setLabelDraft('');
+                  }
+                }}
+                placeholder="Add label"
+                value={labelDraft}
+              />
+            </form>
+          ) : (
+            <button
+              className="call-chip add"
+              disabled={busy || !ctx.canUseControls}
+              onClick={() => setAddingLabel(true)}
+              type="button"
+            >
+              + Add label
+            </button>
+          )}
+        </div>
+      </div>
       <div className="call-log-block">
         <div className="eyebrow">Log a call</div>
         <div className="call-outcomes">
@@ -1074,10 +1174,10 @@ function CallPanel({ ctx, lead }) {
           <ol>
             {activity.map((item) => (
               <li key={item.id}>
-                <span className={`call-dot ${item.kind}`} />
-                <div>
+                <span className="call-dot" />
+                <div className="call-activity-row">
                   <div className="call-activity-title">{item.title}</div>
-                  <div className="muted">{item.at ? formatHelsinkiTime(item.at) : ''}</div>
+                  <div className="muted">{item.at ? formatActivityWhen(item.at) : ''}</div>
                 </div>
               </li>
             ))}
@@ -1706,7 +1806,12 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
   const activityIso = [calls.last_call_at, last?.at, conversation.last_inbound_at, conversation.updated_at, listing.updated_at]
     .filter(Boolean)
     .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0))[0];
-  const city = (listing.location || conversation.location || '').split(',')[0] || '—';
+  const locationParts = String(listing.location || conversation.location || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const city = locationParts[0] || '—';
+  const address = locationParts.slice(1).join(', ');
   return {
     id,
     listingId: listing.nettikone_id || '',
@@ -1740,6 +1845,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     bookedAt: conversation.calendar_booking?.start || listing.raw_data?.calendar_booking?.start || null,
     callLog: calls.call_log,
     lastCallAt: calls.last_call_at,
+    labels: calls.labels,
     activityAt: Date.parse(activityIso) || 0,
     ago: relativeAgo(activityIso),
     snippet: last?.message || 'No messages yet',
@@ -1754,9 +1860,10 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
       { k: 'Nettikone ID', v: listing.nettikone_id || '-' },
     ],
     facts: [
-      { k: 'Location', v: city },
-      { k: 'Listing', v: listing.nettikone_id ? `#${listing.nettikone_id}` : '—' },
-      { k: 'Last call', v: calls.last_call_at ? formatHelsinkiTime(calls.last_call_at) : 'Not recorded', dim: !calls.last_call_at },
+      { k: 'Location', v: city === '—' ? '—' : city.toLocaleUpperCase('fi-FI') },
+      { k: 'Address', v: address || 'Not recorded', dim: !address },
+      { k: 'Previous service', v: listing.category || listing.listing_type || 'Not recorded', dim: !listing.category && !listing.listing_type },
+      { k: 'Last visit', v: calls.last_call_at ? formatActivityWhen(calls.last_call_at) : 'Not recorded', dim: !calls.last_call_at },
       { k: 'Source', v: listing.seller_type || 'Nettikone' },
     ],
     msgs: (conversation.messages || []).map((message) => ({

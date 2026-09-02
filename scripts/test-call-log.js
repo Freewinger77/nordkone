@@ -1,4 +1,12 @@
-import { applyCallLog, listingCallFields, mergeActivity, nextMorningHelsinki, outcomeLabel } from '../shared/call-log.js';
+import {
+  applyCallLog,
+  applyLabels,
+  formatActivityWhen,
+  listingCallFields,
+  mergeActivity,
+  nextMorningHelsinki,
+  outcomeLabel,
+} from '../shared/call-log.js';
 
 let failed = 0;
 
@@ -124,6 +132,13 @@ const fields = listingCallFields({
 });
 expect('fields log', fields.call_log.length, 1);
 expect('fields callback', fields.callback_at, '2026-09-02T06:00:00.000Z');
+expect('activity when', formatActivityWhen('2026-09-01T03:45:00.000Z'), '01 Sept, 06:45');
+
+const labelled = applyLabels({ listing: { raw_data: { labels: ['Hot'] } }, add: 'Email' });
+expect('add label', labelled.labels.join(','), 'Hot,Email');
+const dropped = applyLabels({ listing: { raw_data: labelled.raw_data }, remove: 'hot' });
+expect('remove label case-insensitive', dropped.labels.join(','), 'Email');
+expect('fields labels', listingCallFields({ raw_data: { labels: ['Hot', 'Hot', ''] } }).labels.join(','), 'Hot');
 
 if (failed) {
   console.error(`FAILED ${failed}`);

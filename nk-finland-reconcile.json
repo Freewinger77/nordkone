@@ -1,0 +1,442 @@
+{
+  "at": "2026-08-31T02:38:28.250Z",
+  "scrape": {
+    "total": 3758,
+    "with_phone": 3482,
+    "description": 430,
+    "popup": 3052,
+    "missing": 276,
+    "quality": 3461,
+    "mobiles": 3264
+  },
+  "ledger_before": {
+    "listings": 564,
+    "with_phone": 564,
+    "eligible": 516
+  },
+  "quality_mobile_5k": 3244,
+  "already_in_ledger": 162,
+  "new_listing_ids": 3082,
+  "new_seller_listings": 3041,
+  "new_seller_unique_mobiles": 563,
+  "known_seller_new_machines": 41,
+  "unique_quality_mobiles_all": 725,
+  "description_phones": 430,
+  "popup_phones": 3052,
+  "missing": 276,
+  "title_moves": 0,
+  "price_moves": 3,
+  "by_category": {
+    "maarakennus": 2857,
+    "nosturit": 184
+  },
+  "sample_new_sellers": [
+    {
+      "id": "2684518",
+      "title": "Metso Lokotrack LT 120 Leukamurska",
+      "price": 727900,
+      "phone": "+358451318462",
+      "src": "show_number_popup",
+      "loc": "Oulu, Pohjois-Pohjanmaa",
+      "seller": "Kokka ja Kone",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/metso/lokotrack-lt-120-leukamurska/2684518"
+    },
+    {
+      "id": "2679644",
+      "title": "Cat 988KXE",
+      "price": 488195,
+      "phone": "+358404858847",
+      "src": "show_number_popup",
+      "loc": "Oulu, Pohjois-Pohjanmaa",
+      "seller": "Avesco Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/cat/988kxe/2679644"
+    },
+    {
+      "id": "2648777",
+      "title": "Huddig 1370 CITY",
+      "price": 475645,
+      "phone": "+358400764580",
+      "src": "show_number_popup",
+      "loc": "Masku, Varsinais-Suomi",
+      "seller": "Konesilta Oy Masku",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/huddig/1370-city/2648777"
+    },
+    {
+      "id": "2662824",
+      "title": "Metso LT550GP",
+      "price": 439000,
+      "phone": "+358407249300",
+      "src": "show_number_popup",
+      "loc": "Vantaa, Uusimaa",
+      "seller": "Beijer Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/metso/lt550gp/2662824"
+    },
+    {
+      "id": "2622153",
+      "title": "Cat 982XE",
+      "price": 382775,
+      "phone": "+358404858847",
+      "src": "show_number_popup",
+      "loc": "Kerava, Uusimaa",
+      "seller": "Avesco Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/cat/982xe/2622153"
+    },
+    {
+      "id": "2660959",
+      "title": "Huddig 1260E CABLE",
+      "price": 375245,
+      "phone": "+358400417423",
+      "src": "show_number_popup",
+      "loc": "Kärsämäki, Pohjois-Pohjanmaa",
+      "seller": "Konesilta Oy Kärsämäki",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/huddig/1260e-cable/2660959"
+    },
+    {
+      "id": "2668846",
+      "title": "Metso LT 330GPB",
+      "price": 375000,
+      "phone": "+358407249300",
+      "src": "show_number_popup",
+      "loc": "Vantaa, Uusimaa",
+      "seller": "Beijer Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/metso/lt-330gpb/2668846"
+    },
+    {
+      "id": "2620963",
+      "title": "Cat 982",
+      "price": 368970,
+      "phone": "+358404858847",
+      "src": "show_number_popup",
+      "loc": "Kerava, Uusimaa",
+      "seller": "Avesco Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/cat/982/2620963"
+    },
+    {
+      "id": "2633858",
+      "title": "Lännen 8700M HUIPPUVARUSTEET",
+      "price": 358804,
+      "phone": "+358400417423",
+      "src": "show_number_popup",
+      "loc": "Kärsämäki, Pohjois-Pohjanmaa",
+      "seller": "Konesilta Oy Kärsämäki",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/lannen/8700m-huippuvarusteet/2633858"
+    },
+    {
+      "id": "2671665",
+      "title": "Cat 980",
+      "price": 350145,
+      "phone": "+358404858847",
+      "src": "show_number_popup",
+      "loc": "Kerava, Uusimaa",
+      "seller": "Avesco Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/cat/980/2671665"
+    },
+    {
+      "id": "2681695",
+      "title": "Volvo EC220EL",
+      "price": 345125,
+      "phone": "+358503368887",
+      "src": "show_number_popup",
+      "loc": "Virrat, Pirkanmaa",
+      "seller": "Kone Wirrat Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/volvo/ec220el/2681695"
+    },
+    {
+      "id": "2602317",
+      "title": "Sandvik WH440e",
+      "price": 332575,
+      "phone": "+358407249300",
+      "src": "show_number_popup",
+      "loc": "Vantaa, Uusimaa",
+      "seller": "Beijer Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/sandvik/wh440e/2602317"
+    },
+    {
+      "id": "2686698",
+      "title": "Cat 352",
+      "price": 325045,
+      "phone": "+358404858847",
+      "src": "show_number_popup",
+      "loc": "Kerava, Uusimaa",
+      "seller": "Avesco Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/cat/352/2686698"
+    },
+    {
+      "id": "2653931",
+      "title": "Atlas 165WSR",
+      "price": 313624,
+      "phone": "+358400764580",
+      "src": "show_number_popup",
+      "loc": "Masku, Varsinais-Suomi",
+      "seller": "Konesilta Oy Masku",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/atlas/165wsr/2653931"
+    },
+    {
+      "id": "2644244",
+      "title": "Hitachi ZX 350 LC- 6 / PITKÄPUOMI 20m ym...",
+      "price": 311240,
+      "phone": "+358504065874",
+      "src": "show_number_popup",
+      "loc": "Ilmajoki, Etelä-Pohjanmaa",
+      "seller": "Rinta-Jouppi Machine",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/hitachi/zx-350-lc-6-pitkapuomi-20m-ym/2644244"
+    },
+    {
+      "id": "2472142",
+      "title": "SANY SY390H",
+      "price": 311240,
+      "phone": "+358400406198",
+      "src": "show_number_popup",
+      "loc": "Vantaa, Uusimaa",
+      "seller": "Suvanto Trucks Vantaa",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/sany/sy390h/2472142"
+    },
+    {
+      "id": "2673830",
+      "title": "Caterpillar 320 EL REMU BIG FLOAT E22",
+      "price": 301200,
+      "phone": "+358400393675",
+      "src": "show_number_popup",
+      "loc": "Lahti, Päijät-Häme",
+      "seller": "MACHINECARS",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/caterpillar/320-el-remu-big-float-e22/2673830"
+    },
+    {
+      "id": "2682056",
+      "title": "Volvo ECR355EL NOVATRON MOVAX OIL QUICK ROTOTILT STAGE 5",
+      "price": 299945,
+      "phone": "+358405310900",
+      "src": "show_number_popup",
+      "loc": "Pirkkala, Pirkanmaa",
+      "seller": "Konesilta Oy Pirkkala",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/volvo/ecr355el-novatron-movax-oil-quick-rototilt-stage-5/2682056"
+    },
+    {
+      "id": "2665157",
+      "title": "Hitachi ZX175W-7 HUIPPU VARUSTEET",
+      "price": 299945,
+      "phone": "+358400417423",
+      "src": "show_number_popup",
+      "loc": "Kärsämäki, Pohjois-Pohjanmaa",
+      "seller": "Konesilta Oy Kärsämäki",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/hitachi/zx175w-7-huippu-varusteet/2665157"
+    },
+    {
+      "id": "2662820",
+      "title": "Metso LT 120",
+      "price": 290000,
+      "phone": "+358407249300",
+      "src": "show_number_popup",
+      "loc": "Vantaa, Uusimaa",
+      "seller": "Beijer Oy",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/metso/lt-120/2662820"
+    },
+    {
+      "id": "2632164",
+      "title": "Lännen 8600 M",
+      "price": 288650,
+      "phone": "+358451318462",
+      "src": "show_number_popup",
+      "loc": "Kuopio, Pohjois-Savo",
+      "seller": "Kokka ja Kone",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/lannen/8600-m/2632164"
+    },
+    {
+      "id": "2685863",
+      "title": "Volvo A45G FS",
+      "price": 282375,
+      "phone": "+358401422294",
+      "src": "show_number_popup",
+      "loc": "Pirkkala, Pirkanmaa",
+      "seller": "Volvo Construction Equipment Finland Oy Tampere",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/volvo/a45g-fs/2685863"
+    },
+    {
+      "id": "2649240",
+      "title": "Huddig 1260 D / Pyörittäjä, Rasvari, Lämmitin, Siisti!",
+      "price": 275974,
+      "phone": "+358504065874",
+      "src": "show_number_popup",
+      "loc": "Kerava, Uusimaa",
+      "seller": "Rinta-Jouppi Machine",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/huddig/1260-d-pyorittaja-rasvari-lammitin-siisti/2649240"
+    },
+    {
+      "id": "2692620",
+      "title": "Volvo EWR170E STAGE V",
+      "price": 274845,
+      "phone": "+358503362477",
+      "src": "show_number_popup",
+      "loc": "Tuusula, Uusimaa",
+      "seller": "Konesilta Oy Tuusula",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/volvo/ewr170e-stage-v/2692620"
+    },
+    {
+      "id": "2683625",
+      "title": "Hitachi ZX 225USR LC-7 /3D, Rototilt, Rasvari, Lämmitin!",
+      "price": 274845,
+      "phone": "+358504065874",
+      "src": "show_number_popup",
+      "loc": "Ilmajoki, Etelä-Pohjanmaa",
+      "seller": "Rinta-Jouppi Machine",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/hitachi/zx-225usr-lc-7-3d-rototilt-rasvari-lammitin/2683625"
+    }
+  ],
+  "sample_known_seller_new_machines": [
+    {
+      "id": "2686607",
+      "title": "Volvo L 180 H",
+      "price": 185740,
+      "phone": "+358400221680",
+      "src": "show_number_popup",
+      "loc": "Oripää, Varsinais-Suomi",
+      "seller": null,
+      "type": "Seller",
+      "url": "https://www.nettikone.com/volvo/l-180-h/2686607"
+    },
+    {
+      "id": "2690288",
+      "title": "Volvo L 150 H",
+      "price": 106675,
+      "phone": "+358400221680",
+      "src": "show_number_popup",
+      "loc": "Oripää, Varsinais-Suomi",
+      "seller": null,
+      "type": "Seller",
+      "url": "https://www.nettikone.com/volvo/l-150-h/2690288"
+    },
+    {
+      "id": "2196400",
+      "title": "Sandvik DX 780 Drill rig",
+      "price": 106675,
+      "phone": "+358400864863",
+      "src": "show_number_popup",
+      "loc": "Hämeenlinna, Kanta-Häme",
+      "seller": "Timo Mattila",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/sandvik/dx-780-drill-rig/2196400"
+    },
+    {
+      "id": "2127787",
+      "title": "Lännen 860S",
+      "price": 77810,
+      "phone": "+358400864863",
+      "src": "show_number_popup",
+      "loc": "Hämeenlinna, Kanta-Häme",
+      "seller": "Timo Mattila",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/lannen/860s/2127787"
+    },
+    {
+      "id": "2672748",
+      "title": "Nemek 407 TS",
+      "price": 69025,
+      "phone": "+358400617626",
+      "src": "show_number_popup",
+      "loc": "Orimattila, Päijät-Häme",
+      "seller": null,
+      "type": "Seller",
+      "url": "https://www.nettikone.com/nemek/407-ts/2672748"
+    },
+    {
+      "id": "2681977",
+      "title": "Volvo L50GS 40km/h",
+      "price": 58358,
+      "phone": "+358403008501",
+      "src": "show_number_popup",
+      "loc": "Honkajoki, Satakunta",
+      "seller": null,
+      "type": "Seller",
+      "url": "https://www.nettikone.com/volvo/l50gs-40km-h/2681977"
+    },
+    {
+      "id": "2433043",
+      "title": "Caterpillar 980 F II",
+      "price": 56475,
+      "phone": "+358400682111",
+      "src": "show_number_popup",
+      "loc": "Oulu, Pohjois-Pohjanmaa",
+      "seller": "Oy Machine Export Oulu Ltd",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/caterpillar/980-f-ii/2433043"
+    },
+    {
+      "id": "2692408",
+      "title": "Komatsu WA80M-7",
+      "price": 45180,
+      "phone": "+358400594896",
+      "src": "description",
+      "loc": "Kirjaudu sisään tai lue lisää rekisteröitymisen eduista",
+      "seller": null,
+      "url": "https://www.nettikone.com/komatsu/wa80m-7/2692408"
+    },
+    {
+      "id": "2251129",
+      "title": "Power Screen Commander",
+      "price": 37650,
+      "phone": "+358400864863",
+      "src": "show_number_popup",
+      "loc": "Hämeenlinna, Kanta-Häme",
+      "seller": "Timo Mattila",
+      "type": "Dealer",
+      "url": "https://www.nettikone.com/power-screen/commander/2251129"
+    },
+    {
+      "id": "2687449",
+      "title": "Kaeser Grundomat",
+      "price": 36395,
+      "phone": "+358405140129",
+      "src": "show_number_popup",
+      "loc": "Virolahti, Kymenlaakso",
+      "seller": null,
+      "type": "Seller",
+      "url": "https://www.nettikone.com/kaeser/grundomat/2687449"
+    }
+  ],
+  "titleMoves": [],
+  "priceMoves": [
+    {
+      "id": "2692384",
+      "title": "Fiat-Hitachi FH200",
+      "from": 2.9,
+      "to": 15500
+    },
+    {
+      "id": "2689362",
+      "title": "JCB 8014",
+      "from": 14000,
+      "to": 17570
+    },
+    {
+      "id": "2679993",
+      "title": "Åkerman H14",
+      "from": 2.9,
+      "to": 8000
+    }
+  ]
+}

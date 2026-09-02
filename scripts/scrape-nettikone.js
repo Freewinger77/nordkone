@@ -3,6 +3,8 @@ import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import * as cheerio from 'cheerio';
 import { firstValidPhone, extractPhoneCandidates } from '../api/lib/phone.js';
+import { classifyListing } from '../shared/machine-class.js';
+import { recoverAskingPrice, storedPriceText } from '../shared/price-text.js';
 import { createSupabase, hasSupabaseConfig } from '../api/lib/supabase.js';
 import { CLIENT_KEY, SOURCE_SYSTEM } from '../api/lib/campaign.js';
 
@@ -11,7 +13,8 @@ dotenv.config({ override: true });
 const BASE_URL = process.env.NETTIKONE_BASE_URL || 'https://www.nettikone.com';
 const DEFAULT_CATEGORY = process.env.NETTIKONE_DEFAULT_CATEGORY || 'kaivinkone';
 const DEFAULT_POSTED_BY = process.env.NETTIKONE_DEFAULT_POSTED_BY || 'S';
-const REQUEST_DELAY_MS = Number(process.env.NETTIKONE_REQUEST_DELAY_MS || 750);
+const REQUEST_DELAY_MS = Number(process.env.NETTIKONE_REQUEST_DELAY_MS || 150);
+const LISTING_CONCURRENCY = Math.max(1, Number(process.env.NETTIKONE_LISTING_CONCURRENCY || 4));
 const USER_AGENT =
   process.env.NETTIKONE_USER_AGENT ||
   'Mozilla/5.0 NordKoneLeadBot/0.1 (+https://nordkone.fi)';
@@ -39,7 +42,12 @@ export async function runScrape(options = {}) {
   const postedBy = options.postedBy || options['posted-by'] || DEFAULT_POSTED_BY;
   const startUrl = options.url || buildSearchUrl({ category, postedBy, page: 1 });
   const supabase = !dryRun && hasSupabaseConfig() ? createSupabase() : null;
+  const knownIds = supabase && !refreshExisting ? await loadKnownListingIds(supabase) : new Set();
+  const budgetMs = positiveNumber(options.maxMs || options.max_ms, 0);
+  const startedAt = Date.now();
+  const budgetLeft = () => (budgetMs ? budgetMs - (Date.now() - startedAt) : Number.POSITIVE_INFINITY);
   const seenUrls = new Set();
+  const scanAllPages = options.scanAllPages !== false && options.scanAllPages !== 'false';
   const stats = {
     target_new_leads: targetNewLeads,
     max_pages: maxPages,
@@ -59,12 +67,18 @@ export async function runScrape(options = {}) {
   };
 
   for (let page = 1; page <= maxPages; page += 1) {
+    if (budgetLeft() < 4000) {
+      stats.stop_reason = 'time_budget';
+      break;
+    }
+
     const listingUrls = await discoverListingUrlsForPage({
       page,
       category,
       postedBy,
       startUrl,
       hasCustomUrl: Boolean(options.url),
+      timeoutMs: Math.min(12000, Math.max(budgetLeft() - 2000, 3000)),
     });
     stats.pages_scanned += 1;
 
@@ -73,14 +87,28 @@ export async function runScrape(options = {}) {
       break;
     }
 
-    for (const url of listingUrls) {
-      if (seenUrls.has(url)) continue;
-      seenUrls.add(url);
-      stats.discovered += 1;
+    const pagePlan = splitFreshListingUrls(listingUrls, knownIds, seenUrls, refreshExisting);
+    stats.discovered += pagePlan.discovered;
+    stats.existing_listings += pagePlan.existing;
 
+    if (!pagePlan.discovered) {
+      stats.stop_reason = 'no_results';
+      break;
+    }
+
+    if (!pagePlan.fresh.length) continue;
+
+    const room = Math.max(maxListings - stats.processed, 0);
+    const batch = pagePlan.fresh.slice(0, room);
+    await mapPool(batch, LISTING_CONCURRENCY, async (url) => {
+      if (stats.stop_reason) return;
+      if (budgetLeft() < 5000) {
+        stats.stop_reason = 'time_budget';
+        return;
+      }
       if (stats.processed >= maxListings) {
         stats.stop_reason = 'max_listings_reached';
-        break;
+        return;
       }
 
       try {
@@ -89,12 +117,17 @@ export async function runScrape(options = {}) {
 
         if (existing && !refreshExisting) {
           stats.existing_listings += 1;
-          continue;
+          if (nettikoneId) knownIds.add(nettikoneId);
+          return;
         }
 
-        await sleep(REQUEST_DELAY_MS);
-        const listing = await scrapeListing(url, { category });
+        if (REQUEST_DELAY_MS) await sleep(REQUEST_DELAY_MS);
+        const listing = await scrapeListing(url, {
+          category,
+          timeoutMs: Math.min(12000, Math.max(budgetLeft() - 2000, 3000)),
+        });
         stats.processed += 1;
+        if (listing.nettikone_id) knownIds.add(listing.nettikone_id);
 
         if (!listing.normalized_phone) {
           stats.skipped += 1;
@@ -112,18 +145,19 @@ export async function runScrape(options = {}) {
           if (listing.normalized_phone) stats.new_leads += 1;
         }
 
-        if (stats.new_leads >= targetNewLeads) {
+        if (!scanAllPages && stats.new_leads >= targetNewLeads) {
           stats.stop_reason = 'target_new_leads_reached';
-          break;
         }
       } catch (error) {
         stats.failed += 1;
         console.error(`Failed ${url}: ${error.message}`);
       }
-    }
+    });
 
+    if (stats.processed >= maxListings && !stats.stop_reason) {
+      stats.stop_reason = 'max_listings_reached';
+    }
     if (stats.stop_reason) break;
-    await sleep(REQUEST_DELAY_MS);
   }
 
   if (!stats.stop_reason) {
@@ -139,10 +173,88 @@ export async function runScrape(options = {}) {
   return stats;
 }
 
+export async function refreshStoredListings(options = {}) {
+  const supabase = options.supabase || (hasSupabaseConfig() ? createSupabase() : null);
+  if (!supabase) throw new Error('Supabase is required to refresh stored listings');
+
+  const category = options.category || DEFAULT_CATEGORY;
+  const sinceMs = options.since ? new Date(options.since).getTime() : 0;
+  const stats = { considered: 0, refreshed: 0, skipped_fresh: 0, failed: 0, gone: 0 };
+  const rows = [];
+  let from = 0;
+
+  while (from < 5000) {
+    const { data, error } = await supabase
+      .from('nordkone_listings')
+      .select('id,nettikone_id,listing_url,canonical_url,status,first_seen_at,last_seen_at,prospect_id,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason')
+      .eq('client_key', CLIENT_KEY)
+      .range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+
+  const due = rows.filter((row) => {
+    if (!sinceMs) return true;
+    const seen = new Date(row.last_seen_at || 0).getTime();
+    return !Number.isFinite(seen) || seen < sinceMs - 2000;
+  });
+  stats.skipped_fresh = rows.length - due.length;
+  stats.considered = due.length;
+
+  await mapPool(due, LISTING_CONCURRENCY, async (row) => {
+    const url = row.listing_url || row.canonical_url;
+    if (!url) {
+      stats.failed += 1;
+      return;
+    }
+    try {
+      if (REQUEST_DELAY_MS) await sleep(REQUEST_DELAY_MS);
+      const listing = await scrapeListing(url, { category, timeoutMs: 15000 });
+      await upsertListing(supabase, listing, { existing: row });
+      stats.refreshed += 1;
+    } catch (error) {
+      const message = String(error.message || '');
+      if (/HTTP 404|HTTP 410/.test(message)) stats.gone += 1;
+      else stats.failed += 1;
+      console.error(`Refresh failed ${url}: ${error.message}`);
+    }
+  });
+
+  return stats;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const stats = await runScrape(args);
-  console.log(`Done: ${JSON.stringify(stats)}`);
+  const started = new Date().toISOString();
+  const stats = await runScrape({ ...args, scanAllPages: true });
+  let stored = null;
+  if (args['refresh-stored'] || args.refreshStored) {
+    stored = await refreshStoredListings({
+      since: started,
+      category: args.category,
+    });
+  }
+  console.log(`Done: ${JSON.stringify({ search: stats, stored })}`);
+}
+
+export async function mapPool(items, concurrency, fn) {
+  const list = [...items];
+  if (!list.length) return [];
+  const results = new Array(list.length);
+  let next = 0;
+
+  async function worker() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(list[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(Math.max(concurrency, 1), list.length) }, worker));
+  return results;
 }
 
 async function discoverListingUrls({ pages, category, postedBy, startUrl, hasCustomUrl }) {
@@ -157,7 +269,27 @@ async function discoverListingUrls({ pages, category, postedBy, startUrl, hasCus
   return [...urls];
 }
 
-async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, hasCustomUrl }) {
+export function splitFreshListingUrls(urls, knownIds, seenUrls, refreshExisting = false) {
+  const fresh = [];
+  let existing = 0;
+  let discovered = 0;
+
+  for (const url of urls) {
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    discovered += 1;
+    const id = extractNettikoneId(url);
+    if (id && knownIds.has(id) && !refreshExisting) {
+      existing += 1;
+      continue;
+    }
+    fresh.push(url);
+  }
+
+  return { fresh, existing, discovered };
+}
+
+async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, hasCustomUrl, timeoutMs }) {
   const urls = new Set();
   const rootUrl = new URL(startUrl, BASE_URL);
   const pageUrl = hasCustomUrl
@@ -167,7 +299,7 @@ async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, 
     : buildSearchUrl({ category, postedBy, page });
 
   console.log(`Discovering ${pageUrl}`);
-  const html = await fetchText(pageUrl);
+  const html = await fetchText(pageUrl, 0, timeoutMs);
   const $ = cheerio.load(html);
 
   $('a[href]').each((_, link) => {
@@ -179,8 +311,8 @@ async function discoverListingUrlsForPage({ page, category, postedBy, startUrl, 
   return [...urls];
 }
 
-async function scrapeListing(url, { category }) {
-  const html = await fetchText(url);
+async function scrapeListing(url, { category, timeoutMs }) {
+  const html = await fetchText(url, 0, timeoutMs);
   const $ = cheerio.load(html);
   const canonicalUrl = $('link[rel="canonical"]').attr('href') || url;
   const nettikoneId = extractNettikoneId(canonicalUrl) || extractNettikoneId(url);
@@ -200,9 +332,10 @@ async function scrapeListing(url, { category }) {
   const contactPhone = extractContactPhone($);
   const selectedPhone = descriptionPhone || contactPhone;
   const facts = extractFacts($);
-  const priceText = cleanPriceText(facts.Hinta) || extractPriceText($);
+  const priceText = recoverAskingPrice(cleanPriceText(facts.Hinta) || extractPriceText($));
+  const priceEur = parseEuro(priceText);
 
-  return {
+  const listing = {
     nettikone_id: nettikoneId,
     listing_url: url,
     canonical_url: canonicalUrl,
@@ -211,8 +344,8 @@ async function scrapeListing(url, { category }) {
     listing_type: facts['Ilmoitustyyppi'] || facts['Tyyppi'] || null,
     department: facts.Osasto || null,
     category: facts.Kategoria || category || null,
-    price_text: priceText,
-    price_eur: parseEuro(priceText),
+    price_text: storedPriceText(priceText, priceEur) || priceText,
+    price_eur: priceEur,
     vat_text: facts.ALv || facts.ALV || null,
     location: facts.Sijainti || facts.Paikkakunta || extractLocation($),
     region: facts.Maakunta || null,
@@ -235,6 +368,10 @@ async function scrapeListing(url, { category }) {
       scraped_at: new Date().toISOString(),
     },
   };
+
+  listing.machine_class = classifyListing(listing);
+  listing.raw_data.machine_class = listing.machine_class;
+  return listing;
 }
 
 async function upsertListing(supabase, listing, { existing } = {}) {
@@ -298,10 +435,32 @@ async function upsertSellerProspect(supabase, listing) {
   return { row: data, isNew: true };
 }
 
+async function loadKnownListingIds(supabase) {
+  const ids = new Set();
+  let from = 0;
+
+  while (from < 5000) {
+    const { data, error } = await supabase
+      .from('nordkone_listings')
+      .select('nettikone_id')
+      .eq('client_key', CLIENT_KEY)
+      .range(from, from + 999);
+
+    if (error) throw error;
+    for (const row of data || []) {
+      if (row.nettikone_id) ids.add(String(row.nettikone_id));
+    }
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+
+  return ids;
+}
+
 async function loadExistingListing(supabase, nettikoneId) {
   const { data, error } = await supabase
     .from('nordkone_listings')
-    .select('id,prospect_id,status,first_seen_at')
+    .select('id,prospect_id,status,first_seen_at,normalized_phone,selected_phone,description_phone,contact_phone,phone_source,price_eur,price_text,ineligible_reason,raw_data')
     .eq('client_key', CLIENT_KEY)
     .eq('nettikone_id', nettikoneId)
     .maybeSingle();
@@ -333,8 +492,23 @@ function toCampaignProspect(listing) {
   };
 }
 
+export function looksLikeBadPrice(next, prev) {
+  if (next == null) return Boolean(prev);
+  if (prev == null) return false;
+  if (next > 5_000_000 && prev < 500_000) return true;
+  if (prev > 0 && next / prev > 1.5 && Math.abs(next - prev) > 3000) return true;
+  return false;
+}
+
 function toNordKoneListing(listing, { prospectId, existing }) {
   const now = new Date().toISOString();
+  const phone = listing.normalized_phone || existing?.normalized_phone || null;
+  const keepPrice = looksLikeBadPrice(listing.price_eur, existing?.price_eur);
+  const nextEur = keepPrice ? existing?.price_eur : listing.price_eur;
+  const nextText = storedPriceText(
+    keepPrice ? existing?.price_text || listing.price_text : listing.price_text,
+    nextEur,
+  );
 
   return {
     client_key: CLIENT_KEY,
@@ -347,8 +521,8 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     listing_type: listing.listing_type,
     department: listing.department,
     category: listing.category,
-    price_text: listing.price_text,
-    price_eur: listing.price_eur,
+    price_text: nextText || (keepPrice ? existing?.price_text : listing.price_text) || null,
+    price_eur: nextEur,
     vat_text: listing.vat_text,
     location: listing.location,
     region: listing.region,
@@ -359,14 +533,18 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     seller_name: listing.seller_name,
     seller_type: listing.seller_type,
     description: listing.description,
-    description_phone: listing.description_phone,
-    contact_phone: listing.contact_phone,
-    selected_phone: listing.selected_phone,
-    normalized_phone: listing.normalized_phone,
-    phone_source: listing.phone_source,
-    status: existing?.status || (listing.normalized_phone ? 'eligible' : 'ignored'),
-    ineligible_reason: listing.ineligible_reason,
-    raw_data: listing.raw_data,
+    description_phone: listing.description_phone || existing?.description_phone || null,
+    contact_phone: listing.contact_phone || existing?.contact_phone || null,
+    selected_phone: listing.selected_phone || existing?.selected_phone || null,
+    normalized_phone: phone,
+    phone_source: listing.normalized_phone ? listing.phone_source : existing?.phone_source || listing.phone_source,
+    status: existing?.status || (phone ? 'eligible' : 'ignored'),
+    ineligible_reason: phone ? listing.ineligible_reason : existing?.ineligible_reason || listing.ineligible_reason,
+    raw_data: {
+      ...(existing?.raw_data && typeof existing.raw_data === 'object' ? existing.raw_data : {}),
+      ...(listing.raw_data || {}),
+      machine_class: listing.machine_class || listing.raw_data?.machine_class || classifyListing(listing),
+    },
     first_seen_at: existing?.first_seen_at || now,
     last_seen_at: now,
     updated_at: now,
@@ -555,11 +733,12 @@ function withPage(url, page) {
   return next.toString();
 }
 
-async function fetchText(url, redirectCount = 0) {
+async function fetchText(url, redirectCount = 0, timeoutMs = 15000) {
   if (redirectCount > 8) throw new Error(`Too many redirects for ${url}`);
 
   const response = await fetch(url, {
     redirect: 'manual',
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
     headers: {
       'user-agent': USER_AGENT,
       accept: 'text/html,application/xhtml+xml',
@@ -572,7 +751,7 @@ async function fetchText(url, redirectCount = 0) {
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location');
     if (!location) throw new Error(`Redirect without location for ${url}`);
-    return fetchText(new URL(location, url).toString(), redirectCount + 1);
+    return fetchText(new URL(location, url).toString(), redirectCount + 1, timeoutMs);
   }
 
   if (!response.ok) {
@@ -689,7 +868,7 @@ function isUsefulFactKey(key) {
 
 function cleanPriceText(value) {
   const match = String(value || '').match(/\b\d[\d\s.,]*(?:€|EUR)/i);
-  return match?.[0]?.trim() || null;
+  return recoverAskingPrice(match?.[0]) || match?.[0]?.trim() || null;
 }
 
 function listingSummary(listing) {

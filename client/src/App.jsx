@@ -1,19 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { apiGet, apiSend } from './lib/api.js';
-import { Glyph } from './lib/icons.jsx';
+import { Glyph, WhatsAppMark } from './lib/icons.jsx';
 import {
   DESK_STATUSES,
   FLOW_FILTERS,
   QUEUE_KEY,
   bookedSpark,
   buildFlow,
+  buildVerticalFlow,
   buildOutboundMessage,
   buildWeek,
   countFlow,
   cut,
   formatEuro,
+  displayAskingPrice,
   formatHelsinkiTime,
+  isOpenOpportunity,
   isSuspiciousPrice,
   listingStatusLabel,
   loadJson,
@@ -23,9 +26,15 @@ import {
   relativeAgo,
   saveJson,
   smooth,
+  stageLabel,
   statusDot,
+  statusWash,
   weekdayReplySeries,
 } from './lib/desk.js';
+import { Login } from './Login.jsx';
+import { PriceSlider } from './lib/PriceSlider.jsx';
+import { machineClassMeta } from '../../shared/machine-class.js';
+import { CALL_OUTCOMES, formatActivityWhen, listingCallFields, mergeActivity } from '../../shared/call-log.js';
 import './styles.css';
 
 const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
@@ -48,6 +57,7 @@ function App() {
   const [stage, setStage] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [activitySort, setActivitySort] = useState('newest');
   const [weekOffset, setWeekOffset] = useState(0);
   const [modal, setModal] = useState(false);
   const [advOpen, setAdvOpen] = useState(true);
@@ -64,6 +74,7 @@ function App() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [scrapeNote, setScrapeNote] = useState('');
+  const [authed, setAuthed] = useState(null);
 
   const isDesktop = vw >= 1120;
 
@@ -105,8 +116,23 @@ function App() {
   }
 
   useEffect(() => {
-    load({ boot: true });
+    let cancelled = false;
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!cancelled) setAuthed(Boolean(data.ok));
+      })
+      .catch(() => {
+        if (!cancelled) setAuthed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (authed) load({ boot: true });
+  }, [authed]);
 
   useEffect(() => {
     const onResize = () => setVw(window.innerWidth);
@@ -145,7 +171,7 @@ function App() {
             messages: call.latest_message
               ? [{ id: call.id, direction: 'inbound', sender: 'Seller', message: call.latest_message, at: call.received_at }]
               : [],
-            derived_status: 'ready_for_call',
+            derived_status: call.classification === 'ready_for_call' ? 'ready_for_call' : call.classification || 'interested',
           },
           calendarCalls,
         })
@@ -155,12 +181,14 @@ function App() {
   }, [calendarCalls, conversations, listingById, pendingCallbacks]);
 
   useEffect(() => {
-    if (queue !== null || !leads.length) return;
-    setQueue(
-      leads
-        .filter((lead) => lead.interestedSignal || lead.awaiting || lead.reviewSignal || lead.booked)
-        .map((lead) => lead.id)
-    );
+    if (!leads.length) return;
+    if (queue === null) {
+      setQueue(leads.filter(isLiveQueueLead).map((lead) => lead.id));
+      return;
+    }
+    const live = new Set(leads.filter(isLiveQueueLead).map((lead) => lead.id));
+    const next = queue.filter((id) => live.has(id));
+    if (next.length !== queue.length) setQueue(next);
   }, [leads, queue]);
 
   const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null;
@@ -194,7 +222,7 @@ function App() {
   function openLead(lead, source = view) {
     setFrom(source === 'lead' ? 'overview' : source);
     setSelectedLeadId(lead.id);
-    setLeadTab('chat');
+    setLeadTab(lead.opportunity || lead.callback || lead.booked ? 'call' : 'chat');
     setAdvOpen(true);
     setMenuFor(null);
     setView('lead');
@@ -209,7 +237,7 @@ function App() {
   }
 
   async function updateSettings(next) {
-    if (!canUseControls) return;
+    if (!canUseControls) return false;
     setSaving(true);
     setError('');
     try {
@@ -235,8 +263,10 @@ function App() {
           };
         });
       }
+      return true;
     } catch (settingsError) {
       setError(settingsError.message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -248,9 +278,15 @@ function App() {
     setError('');
     setScrapeNote('');
     try {
-      const result = await apiSend('/api/scrape/run?targetNew=10&maxPages=20&maxListings=30', { method: 'POST' });
+      const result = await apiSend('/api/scrape/run?targetNew=40&maxPages=40&maxListings=80', { method: 'POST' });
       const stats = result.stats || {};
-      setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages`);
+      const extra =
+        stats.stop_reason === 'time_budget'
+          ? ' · stopped early, click again'
+          : stats.stop_reason === 'no_results'
+            ? ' · reached the last page'
+            : '';
+      setScrapeNote(`${stats.new_leads || 0} new leads · ${stats.pages_scanned || 0} pages${extra}`);
       await load();
     } catch (scrapeError) {
       setError(scrapeError.message);
@@ -266,12 +302,41 @@ function App() {
     try {
       await apiSend('/api/leads/status', {
         method: 'PATCH',
-        body: { nettikone_id: lead.listingId, desk_status: deskStatus },
+        body: { nettikone_id: lead.listingId, desk_status: deskStatus === 'Call Now' ? 'Callback' : deskStatus === 'Lost / Sold' ? 'Deal Lost' : deskStatus },
       });
       await load();
     } catch (statusError) {
       setError(statusError.message);
     }
+  }
+
+  async function logCall(lead, { outcome = null, comment = '', snooze = false } = {}) {
+    if (!canUseControls || !lead?.listingId) return;
+    setError('');
+    await apiSend('/api/leads/call', {
+      method: 'POST',
+      body: {
+        nettikone_id: lead.listingId,
+        outcome,
+        comment,
+        snooze,
+      },
+    });
+    await load();
+  }
+
+  async function saveLabels(lead, { add = null, remove = null } = {}) {
+    if (!canUseControls || !lead?.listingId) return;
+    setError('');
+    await apiSend('/api/leads/labels', {
+      method: 'POST',
+      body: {
+        nettikone_id: lead.listingId,
+        add,
+        remove,
+      },
+    });
+    await load();
   }
 
   async function sendListing(listing) {
@@ -305,25 +370,33 @@ function App() {
 
   const flowCounts = useMemo(() => countFlow(leads, summary), [leads, summary]);
   const flow = useMemo(() => buildFlow(flowCounts, stage), [flowCounts, stage]);
+  const vFlow = useMemo(() => buildVerticalFlow(flowCounts, stage), [flowCounts, stage]);
   const replies = useMemo(() => weekdayReplySeries(conversations), [conversations]);
   const spark = useMemo(() => bookedSpark(calendarCalls), [calendarCalls]);
-  const week = useMemo(() => buildWeek(weekOffset, calendarCalls), [calendarCalls, weekOffset]);
+  const week = useMemo(
+    () => buildWeek(weekOffset, calendarCalls, leads.filter((lead) => lead.callback && !lead.booked)),
+    [calendarCalls, leads, weekOffset]
+  );
 
-  const pipelineLeads = leads.filter((lead) => lead.awaiting || lead.booked);
+  const pipelineLeads = leads.filter(isOpenOpportunity);
   const pipelineAsk = pipelineLeads.reduce((sum, lead) => sum + parseEuroAmount(lead.priceEur || lead.price), 0);
+  const pipelineCut = Math.round(pipelineAsk * 0.05);
   const replyTotal = replies.office.reduce((a, b) => a + b, 0) + replies.after.reduce((a, b) => a + b, 0);
   const afterShare = replyTotal ? Math.round((replies.after.reduce((a, b) => a + b, 0) / replyTotal) * 100) : 0;
+  const openOpps = flowCounts.callback || flowCounts.interested || 0;
   const kpi = {
     booked: String(flowCounts.booked || 0),
     bookedDelta: flowCounts.booked ? `${flowCounts.booked} live` : '',
-    opps: String(flowCounts.interested || 0),
+    opps: String(openOpps),
+    won: String(flowCounts.won || 0),
     lost: String(flowCounts.lost || 0),
-    oppPct: flowCounts.replied ? `${Math.round((flowCounts.interested / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    oppPct: flowCounts.replied ? `${Math.round(((openOpps + (flowCounts.booked || 0)) / flowCounts.replied) * 100)}% of replies` : 'of replies',
+    wonPct: flowCounts.replied ? `${Math.round((flowCounts.won / flowCounts.replied) * 100)}% of replies` : 'of replies',
     lostPct: flowCounts.replied ? `${Math.round((flowCounts.lost / flowCounts.replied) * 100)}% of replies` : 'of replies',
-    commission: formatEuro(pipelineAsk) || '0 €',
+    commission: formatEuro(pipelineCut) || '0 €',
     commissionSub: pipelineAsk
-      ? `5% est. ${formatEuro(pipelineAsk * 0.05)} · ${pipelineLeads.length} open leads`
-      : 'No open pipeline asking prices yet',
+      ? `Assumed 5% of seller price totalling ${formatEuro(pipelineAsk)}`
+      : 'No asking prices on open opportunities yet',
   };
 
   const queueIds = queue || [];
@@ -332,25 +405,30 @@ function App() {
   const dailyCap = Number(settings?.daily_cap ?? control?.daily_cap ?? 0);
   const obPct = `${Math.min(100, Math.round((sentToday / Math.max(dailyCap, 1)) * 100))}%`;
 
+  const bookedLeads = leads.filter((lead) => lead.booked);
+  const waitLeads = leads.filter((lead) => lead.callback || lead.awaiting);
   const titles = { overview: 'Overview', queue: 'Work queue', calendar: 'Calendar', listings: 'Listings' };
   const baseView = view === 'lead' ? from || 'overview' : view;
   const nav = [
     { id: 'overview', label: 'Overview', short: 'Overview', count: '', icon: 'ChartLineWeightRegular' },
     { id: 'queue', label: 'Work queue', short: 'Queue', count: String(queueIds.length || ''), icon: 'TrayWeightRegular' },
-    { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String(calendarCalls.length || ''), icon: 'ClockCounterClockwiseWeightRegular' },
+    { id: 'calendar', label: 'Calendar', short: 'Calendar', count: String((calendarCalls.length || 0) + waitLeads.length), icon: 'ClockCounterClockwiseWeightRegular' },
     { id: 'listings', label: 'Listings', short: 'Listings', count: String(summary?.eligible || listings.length || ''), icon: 'NotebookWeightRegular' },
   ];
 
   const filter = stage ? FLOW_FILTERS[stage] : null;
-  const pool = filter ? leads.filter(filter.test) : leads;
+  const filtered = filter ? leads.filter(filter.test) : leads;
+  const pool = [...filtered].sort((a, b) => {
+    const delta = (b.activityAt || 0) - (a.activityAt || 0);
+    return activitySort === 'oldest' ? -delta : delta;
+  });
   const pageCount = Math.max(1, Math.ceil(pool.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const pageRows = pool.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id));
-  const bookedLeads = leads.filter((lead) => lead.booked);
-  const waitLeads = leads.filter((lead) => lead.awaiting);
+  const queueLeads = leads.filter((lead) => queueIds.includes(lead.id) && isLiveQueueLead(lead));
 
   const ctx = {
+    activitySort,
     advOpen,
     baseView,
     bookedLeads,
@@ -360,6 +438,7 @@ function App() {
     error,
     filter,
     flow,
+    vFlow,
     from,
     isDesktop,
     kpi,
@@ -407,7 +486,7 @@ function App() {
       setMenuFor(null);
     },
     pickStage: (key) => {
-      setStage(key === stage ? null : key);
+      setStage(key);
       setPage(1);
       setView('overview');
       requestAnimationFrame(() => {
@@ -417,9 +496,17 @@ function App() {
     remainingToday: control?.remaining_today ?? Math.max(dailyCap - sentToday, 0),
     runScrape,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
+    saveOutboundFilters: (outbound_filters) => updateSettings({ outbound_filters }),
+    settings,
+    toggleActivitySort: () => {
+      setActivitySort((value) => (value === 'newest' ? 'oldest' : 'newest'));
+      setPage(1);
+    },
     sendListing,
     setCapDraft,
     setDeskStatus,
+    logCall,
+    saveLabels,
     setLeadTab,
     setMenuFor,
     setPage,
@@ -434,7 +521,14 @@ function App() {
     toggleOutbound: () => updateSettings({ outbound_enabled: !outboundOn }),
     toggleQueue,
     waitLeads,
+    signOut: async () => {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+      setAuthed(false);
+    },
   };
+
+  if (authed === null) return <div className="login-app" aria-busy="true" />;
+  if (!authed) return <Login onAuthed={() => setAuthed(true)} />;
 
   return (
     <main className="desk">
@@ -486,6 +580,7 @@ function MobileDesk({ ctx }) {
           <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} />
           <span className="muted">{ctx.sentToday} of {ctx.dailyCap} sent</span>
         </button>
+        <button className="sign-out" onClick={ctx.signOut} type="button">Sign out</button>
       </div>
       {ctx.error ? <div className="error">{ctx.error}</div> : null}
       <div className="m-body">
@@ -497,7 +592,9 @@ function MobileDesk({ ctx }) {
       <nav className="m-tabbar">
         {ctx.nav.map((item) => (
           <button className={`m-tab ${ctx.baseView === item.id ? 'on' : ''}`} key={item.id} onClick={() => ctx.pickNav(item.id)} type="button">
-            <Glyph name={item.icon} size={20} />
+            <span className="m-tab-icon">
+              <Glyph name={item.icon} size={20} />
+            </span>
             <span>{item.short}</span>
           </button>
         ))}
@@ -547,6 +644,7 @@ function Sidebar({ ctx }) {
           <button className="ob-link" onClick={ctx.openModal} type="button">Open controls →</button>
         ) : null}
       </div>
+      <button className="sign-out" onClick={ctx.signOut} type="button">Sign out</button>
     </aside>
   );
 }
@@ -556,38 +654,50 @@ function Overview({ ctx }) {
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
-          <div className="card-title">Calls booked</div>
-          <svg viewBox="0 0 260 90" width="100%" height="72" preserveAspectRatio="none" style={{ display: 'block', margin: '12px 0 8px' }}>
-            <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 90, 8)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          </svg>
+        <button className={`card card-btn rise-in ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
+          <div className="kpi-head">
+            <span className="card-title">Calls booked</span>
+            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
+          </div>
           <div className="kpi-row">
             <span className="kpi-num">{ctx.kpi.booked}</span>
-            {ctx.kpi.bookedDelta ? <span className="up">{ctx.kpi.bookedDelta}</span> : null}
-            <span className="muted">active calendar bookings</span>
+            <svg className="kpi-spark" viewBox="0 0 260 36" preserveAspectRatio="none">
+              <path className="line-draw" d={poly(ctx.spark.length ? ctx.spark : [0, 0, 0, 0, 0, 0, 0], 260, 36, 4)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+            </svg>
           </div>
+          <div className="muted kpi-sub">Live calendar bookings</div>
         </button>
-        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button">
-          <div className="row">
+        <button className={`card card-btn rise-in ${ctx.stage === 'callback' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('callback')} type="button">
+          <div className="kpi-head">
             <span className="dot live" />
             <span className="card-title">Opportunities</span>
           </div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.opps}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.oppPct}</div>
+          <div className="kpi-num">{ctx.kpi.opps}</div>
+          <div className="muted kpi-sub">{ctx.kpi.oppPct}</div>
         </button>
-        <button className={`card card-mid card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
-          <div className="row">
-            <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
-            <span className="card-title">Deal lost</span>
+        <button className={`card card-btn rise-in ${ctx.stage === 'won' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('won')} type="button">
+          <div className="kpi-head">
+            <span className="dot" style={{ background: 'rgb(113, 221, 140)' }} />
+            <span className="card-title">Deal won</span>
           </div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.lost}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.lostPct}</div>
+          <div className="kpi-num">{ctx.kpi.won}</div>
+          <div className="muted kpi-sub">{ctx.kpi.wonPct}</div>
         </button>
-        <button className={`card card-wide card-btn rise-in ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
-          <div className="card-title">Pipeline</div>
-          <div className="kpi-num" style={{ marginTop: 12 }}>{ctx.kpi.commission}</div>
-          <div className="muted" style={{ marginTop: 6 }}>{ctx.kpi.commissionSub}</div>
-          <div className="muted">Open interested, callback and booked asking prices</div>
+        <button className={`card card-btn rise-in ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
+          <div className="kpi-head">
+            <span className="dot" style={{ background: 'rgb(255,71,71)' }} />
+            <span className="card-title">Lost / Sold</span>
+          </div>
+          <div className="kpi-num">{ctx.kpi.lost}</div>
+          <div className="muted kpi-sub">{ctx.kpi.lostPct}</div>
+        </button>
+        <button className={`card card-btn rise-in ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
+          <div className="kpi-head">
+            <span className="card-title">Pipeline</span>
+            <span className="kpi-chip">5%</span>
+          </div>
+          <div className="kpi-num">{ctx.kpi.commission}</div>
+          <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
         </button>
       </div>
 
@@ -595,43 +705,29 @@ function Overview({ ctx }) {
         <article className="card flow-card rise-in">
           <div className="wrap">
             <span className="card-title">Campaign flow</span>
-            <span className="muted" style={{ flex: 1 }}>{scrapedCount(ctx.summary)} listings scraped · {ctx.summary?.eligible || 0} not yet messaged</span>
-            <span className="muted">Booked <strong style={{ color: 'rgb(0,0,0)' }}>{ctx.kpi.booked}</strong></span>
+            <span className="muted">{scrapedCount(ctx.summary)} scraped · {ctx.summary?.eligible || 0} not messaged</span>
+            <span className="grow" />
+            <span className="muted">Click a stage to filter</span>
           </div>
-          <div className="flow-wrap">
-            <svg viewBox="0 0 1120 500" width="100%" height="300" preserveAspectRatio="none" style={{ display: 'block', height: 300 }}>
-              {ctx.flow.links.map((link) => (
-                <path d={link.d} fill="rgba(0,0,0,0.05)" key={link.d} />
-              ))}
-              {ctx.flow.nodes.map((node) => (
-                <rect fill={node.c} height={node.h} key={node.k} onClick={() => ctx.pickStage(node.k)} rx="4" style={{ cursor: 'pointer' }} width={node.w} x={node.x} y={node.y} />
-              ))}
-            </svg>
-            {ctx.flow.nodes.map((node) => (
-              <div className="flow-label" key={`${node.k}-label`} onClick={() => ctx.pickStage(node.k)} style={{ left: node.left, top: node.top }}>
-                <strong style={{ color: node.lfg }}>{node.label}</strong>
-                <span>{node.count}</span>
-              </div>
-            ))}
-          </div>
-          <div className="muted" style={{ marginTop: 12 }}>Click a stage to filter the lead list to those exact signals.</div>
+          <CampaignFlow flow={ctx.flow} onPick={ctx.pickStage} stage={ctx.stage} />
         </article>
 
         <article className="card reply-card rise-in">
-          <div className="wrap">
-            <span className="card-title">Reply timing</span>
-            <span className="muted">{ctx.replyTotal} replies this week</span>
+          <div className="reply-head">
+            <div className="wrap">
+              <span className="card-title">Reply timing</span>
+              <span className="muted">{ctx.replyTotal} this week · {ctx.afterShare}% after hours</span>
+            </div>
+            <div className="legend">
+              <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(0,0,0)' }} />Office {ctx.replies.office.reduce((a, b) => a + b, 0)}</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
+            </div>
           </div>
-          <div className="legend">
-            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(0,0,0)' }} />Office hours {ctx.replies.office.reduce((a, b) => a + b, 0)}</div>
-            <div className="legend-item"><span className="legend-line" style={{ background: 'rgb(184,153,235)' }} />After hours {ctx.replies.after.reduce((a, b) => a + b, 0)}</div>
-          </div>
-          <svg viewBox="0 0 420 190" width="100%" style={{ display: 'block', marginTop: 8, flex: 1 }}>
-            <path className="line-draw" d={smooth(ctx.replies.office, 420, 190, 14)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
-            <path className="line-draw" d={smooth(ctx.replies.after, 420, 190, 14)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
+          <svg className="reply-svg" viewBox="0 0 320 160" preserveAspectRatio="none">
+            <path className="line-draw" d={smooth(ctx.replies.office, 320, 160, 10)} fill="none" stroke="rgb(0,0,0)" strokeWidth="2" />
+            <path className="line-draw" d={smooth(ctx.replies.after, 320, 160, 10)} fill="none" stroke="rgb(184,153,235)" strokeWidth="2" />
           </svg>
           <div className="weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
-          <div className="muted" style={{ marginTop: 12 }}>{ctx.afterShare}% of replies arrive outside office hours.</div>
         </article>
       </div>
 
@@ -668,20 +764,20 @@ function CalendarPage({ ctx }) {
       </div>
       <div className="week-grid">
         {ctx.week.days.map((day) => (
-          <div className={`day-col ${day.today ? 'today' : ''}`} key={day.name}>
+          <div className={`day-col${day.today ? ' today' : ''}${day.blocked ? ' blocked' : ''}`} key={day.name}>
             <div className="day-head">
               <span className="day-name">{day.name}</span>
               <span className="day-num">{day.num}</span>
             </div>
             <div className="day-body">
               {day.events.map((event) => (
-                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.at}</strong>
+                <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.kind === 'callback' ? 'Call Now' : event.at}</strong>
                   <p>{event.machine}</p>
-                  <small>{event.phone}</small>
+                  <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'No outbound on Sunday' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}
@@ -721,9 +817,10 @@ function ListingsPage({ ctx }) {
             <div className="col-lead">
               <div className="machine">{row.machine_title}</div>
               <div className="muted">{row.nettikone_id} · {row.location || 'No location'}</div>
+              <span className="type-pill">{machineClassMeta(row.machine_class).label}</span>
             </div>
             <div className="col-price">
-              <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{row.price_text || '-'}</div>
+              <div className={`price ${isSuspiciousPrice(row.price_text, row.price_eur) ? 'warn' : ''}`}>{displayAskingPrice(row.price_text, row.price_eur)}</div>
               <div className="muted">{row.model_year || 'Year unknown'}</div>
             </div>
             <div style={{ width: 150, flexShrink: 0 }}>
@@ -750,10 +847,11 @@ function ListingsPage({ ctx }) {
               <div className="photo">Advert photo</div>
               <dl className="fields">
                 {[
-                  ['Price', listing.price_text || '-'],
+                  ['Price', displayAskingPrice(listing.price_text, listing.price_eur)],
                   ['Model year', listing.model_year || '-'],
                   ['Location', listing.location || '-'],
                   ['Registration', listing.registration_number || 'Ei rekisterissä'],
+                  ['Type', machineClassMeta(listing.machine_class).label],
                   ['Phone', listing.normalized_phone || '-'],
                   ['Seller prospect', listing.seller_name || listing.prospect_id || '-'],
                 ].map(([k, v]) => (
@@ -796,14 +894,37 @@ function ListingsPage({ ctx }) {
 
 function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overview' }) {
   const rangeFrom = ctx.pool.length === 0 ? 0 : (ctx.page - 1) * ctx.pageSize + 1;
+  const [filtersOpen, setFiltersOpen] = useState(false);
   return (
     <>
       {!hideToolbar ? (
         <div className="toolbar">
-          <button className="btn btn-ring" type="button">
-            <Glyph name="FunnelSimpleWeightRegular" size={17} />
-            Filters
-          </button>
+          <div className="filter-pop">
+            <button className={`btn btn-ring ${filtersOpen || ctx.filter ? 'is-on' : ''}`} onClick={() => setFiltersOpen((open) => !open)} type="button">
+              <Glyph name="FunnelSimpleWeightRegular" size={17} />
+              Filters
+            </button>
+            {filtersOpen ? (
+              <>
+                <button className="filter-scrim" onClick={() => setFiltersOpen(false)} type="button" aria-label="Close filters" />
+                <div className="filter-menu" role="menu">
+                  <button className={`filter-item ${ctx.stage ? '' : 'on'}`} onClick={() => { ctx.pickStage(null); setFiltersOpen(false); }} type="button">
+                    All leads
+                  </button>
+                  {Object.entries(FLOW_FILTERS).map(([key, row]) => (
+                    <button
+                      className={`filter-item ${ctx.stage === key ? 'on' : ''}`}
+                      key={key}
+                      onClick={() => { ctx.pickStage(key); setFiltersOpen(false); }}
+                      type="button"
+                    >
+                      {row.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
           {ctx.filter ? (
             <button className="btn btn-soft" onClick={() => ctx.pickStage(null)} type="button">
               {`Filtered to ${ctx.filter.label}`} <span style={{ color: 'rgba(0,0,0,0.4)' }}>×</span>
@@ -811,9 +932,9 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
           ) : null}
           <span className="grow" />
           <span className="muted">{ctx.pool.length} leads</span>
-          <button className="btn" type="button">
+          <button className="btn" onClick={ctx.toggleActivitySort} type="button">
             <Glyph name="ArrowsDownUpWeightRegular" size={17} />
-            Last activity
+            Last activity · {ctx.activitySort === 'oldest' ? 'Oldest' : 'Newest'}
           </button>
           <button className="btn btn-ring" onClick={() => window.location.reload()} type="button">Refresh</button>
         </div>
@@ -832,14 +953,14 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             <div className="col-lead">
               <div className="machine">{cut(row.machine)}</div>
               <div className="phone-row">
-                <Glyph name="WhatsappLogoWeightFill" size={13} />
+                <WhatsAppMark size={13} />
                 <span>{row.phone}</span>
               </div>
             </div>
             <div className={compact ? '' : 'col-status'} style={compact ? { width: 150, flexShrink: 0 } : undefined}>
               <div className="status-line">
                 <span className="dot" style={{ background: statusDot(row.stage) }} />
-                <span>{row.stage}</span>
+                <span>{stageLabel(row.stage)}</span>
               </div>
               {!compact && ctx.queue.includes(row.id) ? (
                 <button className="q-chip" onClick={(event) => ctx.toggleQueue(row.id, event)} type="button">
@@ -851,8 +972,8 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
             <div className="col-loc"><span style={{ fontSize: 14, lineHeight: '20px' }}>{row.location}</span></div>
             <div className="col-price"><span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span></div>
             <div className={compact ? '' : 'col-act'} style={compact ? { width: 60, flexShrink: 0, textAlign: 'right' } : undefined}>
-              <div style={{ fontSize: 14, lineHeight: '20px', color: compact ? 'rgba(0,0,0,0.4)' : 'rgb(0,0,0)' }}>{row.ago}</div>
-              {!compact ? <div className="snippet">{row.snippet}</div> : null}
+              <div className={compact ? 'muted' : 'ago'}>{row.ago}</div>
+              {!compact ? <div className="snippet">{cut(row.snippet, 30)}</div> : null}
             </div>
             {!compact ? (
               <div className="col-chat">
@@ -861,9 +982,9 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
                     <Glyph name="ArrowLineRightWeightBold" size={15} />
                   </button>
                 ) : null}
-                <button className="icon-btn dark" type="button">
+                <a className="icon-btn dark" href={whatsAppHref(row.phone)} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
                   <Glyph name="ChatTextWeightRegular" size={17} />
-                </button>
+                </a>
               </div>
             ) : null}
           </div>
@@ -893,6 +1014,182 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
   );
 }
 
+function CallPanel({ ctx, lead }) {
+  const [outcome, setOutcome] = useState(null);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [addingLabel, setAddingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
+  const activity = mergeActivity(lead.msgs, lead.callLog);
+  const labels = lead.labels || [];
+
+  async function save(snooze) {
+    if (!ctx.canUseControls) return;
+    if (!snooze && !outcome) {
+      setNote('Pick what happened on the call.');
+      return;
+    }
+    setBusy(true);
+    setNote('');
+    try {
+      await ctx.logCall(lead, { outcome, comment, snooze });
+      setComment('');
+      setOutcome(null);
+      setNote(snooze ? 'Snoozed until tomorrow morning.' : 'Call logged.');
+    } catch (error) {
+      setNote(error.message || 'Could not save the call.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitLabel(event) {
+    event?.preventDefault?.();
+    const value = labelDraft.trim();
+    if (!value || !ctx.canUseControls) {
+      setAddingLabel(false);
+      setLabelDraft('');
+      return;
+    }
+    setBusy(true);
+    try {
+      await ctx.saveLabels(lead, { add: value });
+      setLabelDraft('');
+      setAddingLabel(false);
+    } catch (error) {
+      setNote(error.message || 'Could not add the label.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeLabel(label) {
+    if (!ctx.canUseControls) return;
+    setBusy(true);
+    try {
+      await ctx.saveLabels(lead, { remove: label });
+    } catch (error) {
+      setNote(error.message || 'Could not remove the label.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="call-panel">
+      <dl className="fields call-facts">
+        {lead.facts.map((field) => (
+          <div className="field" key={field.k}>
+            <dt>{field.k}</dt>
+            <dd className={field.dim ? 'muted' : ''}>{field.v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="call-labels">
+        <div className="eyebrow">Labels</div>
+        <div className="call-label-row">
+          {labels.length ? labels.map((label) => (
+            <button
+              className="call-chip"
+              disabled={busy || !ctx.canUseControls}
+              key={label}
+              onClick={() => removeLabel(label)}
+              type="button"
+            >
+              {label}
+            </button>
+          )) : (
+            <span className="call-chip muted">No labels yet</span>
+          )}
+          {addingLabel ? (
+            <form className="call-label-form" onSubmit={submitLabel}>
+              <input
+                autoFocus
+                disabled={busy}
+                maxLength={24}
+                onBlur={() => {
+                  if (!labelDraft.trim()) {
+                    setAddingLabel(false);
+                  }
+                }}
+                onChange={(event) => setLabelDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setAddingLabel(false);
+                    setLabelDraft('');
+                  }
+                }}
+                placeholder="Add label"
+                value={labelDraft}
+              />
+            </form>
+          ) : (
+            <button
+              className="call-chip add"
+              disabled={busy || !ctx.canUseControls}
+              onClick={() => setAddingLabel(true)}
+              type="button"
+            >
+              + Add label
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="call-log-block">
+        <div className="eyebrow">Log a call</div>
+        <div className="call-outcomes">
+          {CALL_OUTCOMES.map((option) => (
+            <button
+              className={outcome === option.id ? 'on' : ''}
+              disabled={busy || !ctx.canUseControls}
+              key={option.id}
+              onClick={() => setOutcome((current) => (current === option.id ? null : option.id))}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          disabled={busy || !ctx.canUseControls}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="What happened on the call?"
+          rows={3}
+          value={comment}
+        />
+        {note ? <div className={note.includes('Could not') || note.startsWith('Pick') ? 'call-note err' : 'call-note'}>{note}</div> : null}
+        <div className="call-actions">
+          <button className="btn btn-dark" disabled={busy || !ctx.canUseControls} onClick={() => save(false)} type="button">
+            {busy ? 'Saving...' : 'Save outcome'}
+          </button>
+          <button className="btn btn-ring" disabled={busy || !ctx.canUseControls} onClick={() => save(true)} type="button">
+            Snooze
+          </button>
+        </div>
+      </div>
+      <div className="call-activity">
+        <div className="eyebrow">Activity</div>
+        {activity.length ? (
+          <ol>
+            {activity.map((item) => (
+              <li key={item.id}>
+                <span className="call-dot" />
+                <div className="call-activity-row">
+                  <div className="call-activity-title">{item.title}</div>
+                  <div className="muted">{item.at ? formatActivityWhen(item.at) : ''}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted">No calls or messages yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LeadDrawer({ ctx }) {
   const lead = ctx.selectedLead;
   const inQ = ctx.queue.includes(lead.id);
@@ -907,16 +1204,16 @@ function LeadDrawer({ ctx }) {
           </div>
           <div className="row" style={{ flexShrink: 0 }}>
             <div className="rel">
-              <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} type="button">
+              <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ background: statusWash(lead.stage) }} type="button">
                 <span className="dot" style={{ background: statusDot(lead.stage) }} />
-                {lead.stage} ▾
+                {stageLabel(lead.stage)} ▾
               </button>
               {ctx.menuFor === 'lead' ? (
                 <div className="menu wide">
                   {DESK_STATUSES.map((option) => (
                     <button className="menu-item" key={option.label} onClick={() => ctx.setDeskStatus(lead, option.label)} type="button">
                       <span className="dot" style={{ background: option.dot }} />
-                      <span style={{ fontWeight: option.label === lead.stage ? 600 : 400 }}>{option.label}</span>
+                      <span style={{ fontWeight: option.label === stageLabel(lead.stage) ? 600 : 400 }}>{option.label}</span>
                     </button>
                   ))}
                 </div>
@@ -941,7 +1238,7 @@ function LeadDrawer({ ctx }) {
           <div className="chat-col">
             <div className="row" style={{ padding: '16px 24px 10px 33px' }}>
               <span className="eyebrow" style={{ flex: 1, paddingBottom: 0 }}>Conversation</span>
-              <Glyph name="WhatsappLogoWeightFill" size={14} />
+              <WhatsAppMark size={14} />
               <span className="muted">{lead.phone}</span>
             </div>
             <div className="chat-scroll">
@@ -956,6 +1253,9 @@ function LeadDrawer({ ctx }) {
               ))}
               {!lead.msgs.length ? <p className="muted">No stored messages for this session.</p> : null}
             </div>
+          </div>
+          <div className="call-col">
+            <CallPanel key={lead.id} ctx={ctx} lead={lead} />
           </div>
           {ctx.advOpen ? (
             <div className="adv-col">
@@ -1009,23 +1309,23 @@ function LeadSheet({ ctx }) {
     <div className="sheet">
       <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
         <div className="row">
-          <button className="sq lg" onClick={ctx.closeLead} type="button">‹</button>
+          <button className="sq sheet-nav" onClick={ctx.closeLead} type="button">‹</button>
           <span className="grow" />
           <span className="muted">{leadPos(ctx)}</span>
-          <button className="sq lg" onClick={() => ctx.stepLead(-1)} type="button">↑</button>
-          <button className="sq lg" onClick={() => ctx.stepLead(1)} type="button">↓</button>
+          <button className="sq sheet-nav" onClick={() => ctx.stepLead(-1)} type="button">↑</button>
+          <button className="sq sheet-nav" onClick={() => ctx.stepLead(1)} type="button">↓</button>
         </div>
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 20, lineHeight: '28px', fontWeight: 600 }}>{lead.machine}</div>
           <div className="phone-row" style={{ marginTop: 3 }}>
-            <Glyph name="WhatsappLogoWeightFill" size={14} />
+            <WhatsAppMark size={14} />
             <span>{lead.phone}</span>
           </div>
         </div>
         <div className="rel" style={{ marginTop: 12 }}>
-          <button className="btn btn-ring" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40 }} type="button">
+          <button className="btn btn-ring status-pill" onClick={() => ctx.setMenuFor(ctx.menuFor === 'lead' ? null : 'lead')} style={{ height: 40, background: statusWash(lead.stage) }} type="button">
             <span className="dot" style={{ background: statusDot(lead.stage), width: 8, height: 8 }} />
-            {lead.stage} ▾
+            {stageLabel(lead.stage)} ▾
           </button>
           {ctx.menuFor === 'lead' ? (
             <div className="menu narrow">
@@ -1038,9 +1338,10 @@ function LeadSheet({ ctx }) {
             </div>
           ) : null}
         </div>
-        <div className="row" style={{ marginTop: 16, padding: 4, borderRadius: 12, background: 'rgb(249,249,250)' }}>
-          <button className="btn" onClick={() => ctx.setLeadTab('chat')} style={{ flex: 1, background: ctx.leadTab === 'chat' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'chat' ? 600 : 400 }} type="button">Chat</button>
-          <button className="btn" onClick={() => ctx.setLeadTab('advert')} style={{ flex: 1, background: ctx.leadTab === 'advert' ? 'rgb(255,255,255)' : 'transparent', fontWeight: ctx.leadTab === 'advert' ? 600 : 400 }} type="button">Advert</button>
+        <div className="seg">
+          <button className={ctx.leadTab === 'chat' ? 'on' : ''} onClick={() => ctx.setLeadTab('chat')} type="button">Chat</button>
+          <button className={ctx.leadTab === 'call' ? 'on' : ''} onClick={() => ctx.setLeadTab('call')} type="button">Call</button>
+          <button className={ctx.leadTab === 'advert' ? 'on' : ''} onClick={() => ctx.setLeadTab('advert')} type="button">Advert</button>
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
@@ -1056,6 +1357,8 @@ function LeadSheet({ ctx }) {
               </article>
             ))}
           </div>
+        ) : ctx.leadTab === 'call' ? (
+          <CallPanel key={lead.id} ctx={ctx} lead={lead} />
         ) : (
           <div>
             <div className="row" style={{ paddingBottom: 10 }}>
@@ -1086,23 +1389,86 @@ function LeadSheet({ ctx }) {
         <button className="btn btn-ring" onClick={() => ctx.toggleQueue(lead.id)} style={{ flex: 1, height: 48 }} type="button">
           {ctx.queue.includes(lead.id) ? 'In work queue' : 'Add to work queue'}
         </button>
-        <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
-          <Glyph name="WhatsappLogoWeightFill" size={18} />
-          Open chat
-        </a>
+        {ctx.leadTab === 'advert' ? (
+          <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
+            <WhatsAppMark size={18} />
+            Open chat
+          </a>
+        ) : null}
       </div>
     </div>
   );
 }
 
 function OutboundModal({ ctx, onClose }) {
+  const sliderMax = 500000;
+  const saved = ctx.settings?.outbound_filters || { machine_classes: [], price_min: 0, price_max: null };
+  const [classes, setClasses] = useState(saved.machine_classes || []);
+  const [priceMin, setPriceMin] = useState(saved.price_min || 0);
+  const [priceMax, setPriceMax] = useState(saved.price_max == null ? sliderMax : saved.price_max);
+  const [scope, setScope] = useState(null);
+  const [filterNote, setFilterNote] = useState('');
+  const noteTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (classes.length) params.set('classes', classes.join(','));
+    params.set('price_min', String(priceMin || 0));
+    if (priceMax < sliderMax) params.set('price_max', String(priceMax));
+    const timer = setTimeout(() => {
+      apiGet(`/api/outbound/scope?${params}`)
+        .then((data) => {
+          if (!cancelled) setScope(data);
+        })
+        .catch(() => {
+          if (!cancelled) setScope(null);
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [classes, priceMin, priceMax]);
+
+  const selected = new Set(classes);
+  const allOn = selected.size === 0;
+  const catalog = scope?.classes || [];
+  const matching = scope?.matching;
+
+  function toggleClass(id) {
+    setClasses((current) => {
+      const active = current.length ? current : catalog.map((row) => row.id);
+      const next = active.includes(id) ? active.filter((value) => value !== id) : [...active, id];
+      if (!next.length || next.length === catalog.length) return [];
+      return next;
+    });
+  }
+
+  async function saveFilters() {
+    setFilterNote('');
+    const ok = await ctx.saveOutboundFilters({
+      machine_classes: classes,
+      price_min: priceMin || 0,
+      price_max: priceMax >= sliderMax ? null : priceMax,
+    });
+    if (!ok) return;
+    setFilterNote('Filters saved');
+    clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => {
+      setFilterNote('');
+    }, 2800);
+  }
+
   return (
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal" onClick={(event) => event.stopPropagation()}>
         <div className="row" style={{ alignItems: 'flex-start' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Outbound</div>
-            <div className="muted" style={{ marginTop: 2 }}>Same WF-1 switch and daily cap as the previous desk.</div>
+            <div className="muted" style={{ marginTop: 2 }}>Pick machine types and a price band. Sending stays off until you flip the switch.</div>
           </div>
           <button className="sq lg" onClick={onClose} type="button">×</button>
         </div>
@@ -1110,7 +1476,7 @@ function OutboundModal({ ctx, onClose }) {
           <span className={`dot ${ctx.outboundOn ? 'live' : ''}`} style={{ marginTop: 7 }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}>{ctx.outboundOn ? 'Outbound on' : 'Outbound off'}</div>
-            <div className="muted">{ctx.outboundOn ? 'Leads are picked only while this is on and the daily cap has room.' : 'No candidates are being sent.'}</div>
+            <div className="muted">{ctx.outboundOn ? 'Leads are picked only while this is on, the daily cap has room, and they match the filters below.' : 'No candidates are being sent.'}</div>
           </div>
           <button className={`switch ${ctx.outboundOn ? 'on' : ''}`} disabled={ctx.saving || !ctx.canUseControls} onClick={ctx.toggleOutbound} type="button">
             <i />
@@ -1128,19 +1494,135 @@ function OutboundModal({ ctx, onClose }) {
             </div>
           </div>
         </div>
-        <div style={{ height: 1, background: 'rgba(0,0,0,0.04)', margin: '24px 0' }} />
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Locked first message</div>
-          <div className="muted">WF-1 always sends this copy. Machine title replaces the listing name.</div>
-          <div className="outbound-preview" style={{ marginTop: 12 }}>{buildOutboundMessage('Hitachi ZX 225')}</div>
-        </div>
-        <div className="m-card" style={{ marginTop: 24, background: 'rgb(249,249,250)', boxShadow: 'none' }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Inbound replies stay on</div>
-          <div style={{ fontSize: 14, lineHeight: '20px', color: 'rgba(0,0,0,0.8)', marginTop: 4 }}>
-            There is no inbound switch on the previous platform either. Seller WhatsApp replies still land. This switch only pauses first outbound messages. An opt-out reply stops all further outbound to that number.
+        <div style={{ marginTop: 28 }}>
+          <div className="row" style={{ alignItems: 'baseline' }}>
+            <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Machine types</div>
+            <button className="link-clear" onClick={() => setClasses([])} type="button">All types</button>
+          </div>
+          <div className="muted" style={{ marginTop: 4 }}>NordKone buys more than excavators. Combine any Nettikone classes.</div>
+          <div className="class-grid">
+            {catalog.map((row) => {
+              const on = allOn || selected.has(row.id);
+              return (
+                <button
+                  aria-checked={on}
+                  className={`class-chip ${on ? 'on' : ''}`}
+                  key={row.id}
+                  onClick={() => toggleClass(row.id)}
+                  role="checkbox"
+                  type="button"
+                >
+                  <i className="class-check" />
+                  <span className="class-name">{row.label}</span>
+                  <span className="class-count">{row.count ?? 0}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
+        <div style={{ marginTop: 28 }}>
+          <div className="row" style={{ alignItems: 'baseline' }}>
+            <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Price range</div>
+            <span className="muted">{formatSliderBound(priceMin)} – {priceMax >= sliderMax ? 'No max' : formatSliderBound(priceMax)}</span>
+          </div>
+          <div className="muted" style={{ marginTop: 4 }}>Airbnb-style band across every asking price, including cheap attachments and six-figure dealers.</div>
+          <PriceSlider
+            histogram={scope?.price?.histogram || []}
+            max={sliderMax}
+            onChange={(nextMin, nextMax) => {
+              setPriceMin(nextMin);
+              setPriceMax(nextMax);
+            }}
+            valueMax={priceMax}
+            valueMin={priceMin}
+          />
+          <div className="air-labels">
+            <span>0 €</span>
+            <span>500k €</span>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 22, alignItems: 'center' }}>
+          <div className="muted" style={{ flex: 1 }}>
+            {matching == null ? 'Counting matching leads…' : `${matching} eligible lead${matching === 1 ? '' : 's'} match this mix`}
+          </div>
+          {filterNote ? <span className="save-note">{filterNote}</span> : null}
+          <button className="btn btn-dark" disabled={ctx.saving || !ctx.canUseControls} onClick={saveFilters} type="button">
+            {ctx.saving ? 'Saving…' : 'Save filters'}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function formatSliderBound(value) {
+  const amount = Number(value) || 0;
+  if (amount >= 1000) return `${Math.round(amount / 1000)}k €`;
+  return `${amount} €`;
+}
+
+function CampaignFlow({ flow, onPick, stage, vertical = false }) {
+  if (!flow?.nodes?.length) return null;
+  return (
+    <div className={vertical ? 'flow-wrap v-flow' : 'flow-wrap'}>
+      <svg
+        className={vertical ? 'v-flow-svg' : 'flow-svg'}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ aspectRatio: `${flow.vw || 1100} / ${flow.vh || 340}` }}
+        viewBox={`0 0 ${flow.vw || 1100} ${flow.vh || 340}`}
+      >
+        {flow.links.map((link) => (
+          <path
+            d={link.d}
+            fill="rgba(0,0,0,0.09)"
+            key={`${link.from}-${link.to}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPick(link.to);
+            }}
+            style={{ cursor: 'pointer' }}
+          />
+        ))}
+        {flow.nodes.map((node) => (
+          <g
+            key={node.k}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPick(node.k);
+            }}
+            style={{ cursor: 'pointer' }}
+          >
+            <rect
+              fill="transparent"
+              height={node.h + (vertical ? 22 : 16)}
+              width={node.w + (vertical ? 8 : 28)}
+              x={node.x - (vertical ? 4 : 14)}
+              y={node.y - (vertical ? 8 : 8)}
+            />
+            <rect
+              fill={node.c}
+              height={node.h}
+              rx="5"
+              stroke={stage === node.k ? 'rgb(0,0,0)' : 'none'}
+              strokeWidth={stage === node.k ? 2 : 0}
+              width={node.w}
+              x={node.x}
+              y={node.y}
+            />
+          </g>
+        ))}
+      </svg>
+      {flow.nodes.map((node) => (
+        <div
+          className={`flow-label${vertical ? ' v-flow-label' : ''}${stage === node.k ? ' is-on' : ''}`}
+          key={`${node.k}-label`}
+          onClick={() => onPick(node.k)}
+          style={{ left: node.left, maxWidth: vertical ? node.labelMax : undefined, top: node.top }}
+        >
+          <strong style={{ color: node.lfg }}>{node.label}</strong>
+          <span>{node.count}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1150,29 +1632,53 @@ function MobileOverview({ ctx }) {
   return (
     <div className="page-in">
       <div className="m-kpis">
-        <button className={`m-card card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button"><div className="muted">Calls booked</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.booked}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'interested' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('interested')} type="button"><div className="muted">Opportunities</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.opps}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button"><div className="muted">Deal lost</div><div className="kpi-num" style={{ fontSize: 28, lineHeight: '34px' }}>{ctx.kpi.lost}</div></button>
-        <button className={`m-card card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button"><div className="muted">Pipeline</div><div className="kpi-num" style={{ fontSize: 22, lineHeight: '34px' }}>{ctx.kpi.commission}</div></button>
+        <button className={`m-card card-btn ${ctx.stage === 'booked' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('booked')} type="button">
+          <div className="muted">Calls booked</div>
+          <div className="kpi-num">{ctx.kpi.booked}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'callback' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('callback')} type="button">
+          <div className="muted">Opportunities</div>
+          <div className="kpi-num">{ctx.kpi.opps}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'won' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('won')} type="button">
+          <div className="muted">Deal won</div>
+          <div className="kpi-num">{ctx.kpi.won}</div>
+        </button>
+        <button className={`m-card card-btn ${ctx.stage === 'lost' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('lost')} type="button">
+          <div className="muted">Lost / Sold</div>
+          <div className="kpi-num">{ctx.kpi.lost}</div>
+        </button>
+        <button className={`m-card m-pipe card-btn ${ctx.stage === 'pipeline' ? 'card-on' : ''}`} onClick={() => ctx.pickStage('pipeline')} type="button">
+          <div className="kpi-head">
+            <div className="muted">Pipeline</div>
+            <span className="kpi-chip">5%</span>
+          </div>
+          <div className="kpi-num">{ctx.kpi.commission}</div>
+          <div className="muted kpi-sub">{ctx.kpi.commissionSub}</div>
+        </button>
       </div>
-      <div style={{ marginTop: 20 }}>
+      <div className="v-flow-card">
         <div className="card-title">Campaign flow</div>
         <div className="muted" style={{ paddingBottom: 8 }}>Tap a stage to filter the list</div>
-        {ctx.flow.nodes.map((node) => (
-          <button key={node.k} onClick={() => ctx.pickStage(node.k)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 12, padding: '11px 0', border: 0, borderTop: '1px solid rgba(0,0,0,0.04)', background: 'transparent', cursor: 'pointer' }} type="button">
-            <span style={{ width: 4, height: 22, borderRadius: 4, background: node.c }} />
-            <span style={{ flex: 1, textAlign: 'left', fontWeight: 600, color: node.lfg }}>{node.label}</span>
-            <span className="muted">{node.count}</span>
-          </button>
-        ))}
+        <CampaignFlow flow={ctx.vFlow} onPick={ctx.pickStage} stage={ctx.stage} vertical />
       </div>
-      <div className="row" style={{ margin: '24px 0 12px' }}>
+      <div className="row" style={{ margin: '24px 0 12px', gap: 10 }}>
         <span className="card-title" style={{ flex: 1 }}>{ctx.filter ? `Filtered to ${ctx.filter.label}` : 'All leads'}</span>
-        {ctx.filter ? <button className="btn" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+        {ctx.filter ? <button className="link-clear" onClick={() => ctx.pickStage(null)} type="button">Clear</button> : null}
+        <button className="btn" onClick={ctx.toggleActivitySort} type="button">
+          {ctx.activitySort === 'oldest' ? 'Oldest' : 'Newest'}
+        </button>
+        <span className="muted">{ctx.pool.length ? `${(ctx.page - 1) * ctx.pageSize + 1}–${Math.min(ctx.page * ctx.pageSize, ctx.pool.length)} of ${ctx.pool.length}` : '0 of 0'}</span>
       </div>
       <div id="lead-table" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.pageRows.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="overview" />)}
       </div>
+      {ctx.pageCount > 1 ? (
+        <div className="m-pager">
+          <button className="btn btn-ring" onClick={() => ctx.setPage(Math.max(1, ctx.page - 1))} type="button">Previous</button>
+          <button className="btn btn-ring" onClick={() => ctx.setPage(Math.min(ctx.pageCount, ctx.page + 1))} type="button">Next</button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1181,7 +1687,7 @@ function MobileQueue({ ctx }) {
   if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
     <div className="page-in">
-      <div style={{ fontSize: 24, fontWeight: 600 }}>Work queue</div>
+      <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Work queue</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.queueLeads.length} leads in the queue</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.queueLeads.map((row) => <MobileLeadCard ctx={ctx} key={row.id} row={row} source="queue" />)}
@@ -1202,20 +1708,20 @@ function MobileCalendar({ ctx }) {
       <button className="btn btn-ring" onClick={() => ctx.setWeekOffset(0)} style={{ width: '100%', marginTop: 10 }} type="button">Today</button>
       <div style={{ marginTop: 20 }}>
         {ctx.week.days.map((day) => (
-          <div key={day.name} style={{ paddingBottom: 14 }}>
+          <div key={day.name} className={day.blocked ? 'm-day blocked' : undefined} style={{ paddingBottom: 14 }}>
             <div className="row" style={{ padding: '10px 0 8px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>
               <span className="day-name">{day.name}</span>
               <span style={{ fontSize: 16, fontWeight: 600 }}>{day.num}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {day.events.map((event) => (
-                <button className="event" key={`${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
-                  <strong>{event.at}</strong>
+                <button className={`event ${event.kind === 'callback' ? 'event-callback' : ''}`} key={`${event.kind}-${event.leadId}-${event.at}`} onClick={() => openLeadById(ctx, event.leadId, 'calendar')} type="button">
+                  <strong>{event.kind === 'callback' ? 'Call Now' : event.at}</strong>
                   <p>{event.machine}</p>
-                  <small>{event.phone}</small>
+                  <small>{event.kind === 'callback' ? event.at : event.phone}</small>
                 </button>
               ))}
-              {!day.events.length ? <span className="empty-soft">No calls</span> : null}
+              {!day.events.length ? <span className="empty-soft">{day.blocked ? 'No outbound on Sunday' : 'No calls'}</span> : null}
             </div>
           </div>
         ))}
@@ -1234,7 +1740,7 @@ function MobileListings({ ctx }) {
   if (ctx.booting) return <MobileCardsSkeleton title />;
   return (
     <div className="page-in">
-      <div style={{ fontSize: 24, fontWeight: 600 }}>Scraped listings</div>
+      <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 600 }}>Scraped listings</div>
       <div className="muted" style={{ paddingBottom: 14 }}>{ctx.listings.length} visible · queue of {ctx.summary?.eligible || 0} eligible</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ctx.listings.map((listing) => (
@@ -1255,7 +1761,7 @@ function MobileListings({ ctx }) {
               <span className="pill">{listingStatusLabel(listing.status)}</span>
               <span className="muted">{listing.model_year || 'Year unknown'}</span>
               <span className="grow" />
-              <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{listing.price_text || '-'}</span>
+              <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{displayAskingPrice(listing.price_text, listing.price_eur)}</span>
             </div>
             <div className="muted" style={{ marginTop: 6 }}>{listing.normalized_phone || '-'}</div>
           </button>
@@ -1267,25 +1773,27 @@ function MobileListings({ ctx }) {
 
 function MobileLeadCard({ ctx, row, source }) {
   return (
-    <button className="m-lead" onClick={() => ctx.openLead(row, source)} type="button">
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+    <div className="m-lead" onClick={() => ctx.openLead(row, source)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') ctx.openLead(row, source); }}>
+      <div className="m-lead-top">
+        <div className="m-lead-copy">
           <h3>{row.machine}</h3>
-          <div className="phone-row" style={{ marginTop: 3 }}>
-            <Glyph name="WhatsappLogoWeightFill" size={13} />
+          <div className="phone-row">
+            <WhatsAppMark size={13} />
             <span>{row.phone}</span>
           </div>
         </div>
-        <span className="icon-btn dark" style={{ width: 40, height: 40 }}><Glyph name="ChatTextWeightRegular" size={18} /></span>
+        <a className="icon-btn dark m-lead-chat" href={whatsAppHref(row.phone)} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
+          <Glyph name="ChatTextWeightRegular" size={18} />
+        </a>
       </div>
-      <div className="row" style={{ marginTop: 12 }}>
+      <div className="m-lead-foot">
         <span className="dot" style={{ background: statusDot(row.stage) }} />
-        <span>{row.stage}</span>
+        <span className="m-lead-stage">{stageLabel(row.stage)}</span>
         <span className="grow" />
         <span className={`price ${row.priceFlag ? 'warn' : ''}`}>{row.price}</span>
-        <span className="muted">{row.ago}</span>
+        <span className="m-lead-ago">{row.ago}</span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1294,6 +1802,16 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
   const reconciled = reconcileLead({ listing, conversation, calendarCalls });
   const last = (conversation.messages || []).at(-1);
   const hours = listing.operating_hours ? `${String(listing.operating_hours).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} h` : '—';
+  const calls = listingCallFields({ ...listing, ...conversation, raw_data: listing.raw_data || conversation.raw_data || {} });
+  const activityIso = [calls.last_call_at, last?.at, conversation.last_inbound_at, conversation.updated_at, listing.updated_at]
+    .filter(Boolean)
+    .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0))[0];
+  const locationParts = String(listing.location || conversation.location || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const city = locationParts[0] || '—';
+  const address = locationParts.slice(1).join(', ');
   return {
     id,
     listingId: listing.nettikone_id || '',
@@ -1301,7 +1819,7 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     phone: conversation.number || listing.normalized_phone || '-',
     seller: listing.seller_name || (listing.prospect_id ? `Seller ${listing.prospect_id}` : 'Seller'),
     location: (listing.location || 'No location').split(',')[0],
-    price: listing.price_text || '-',
+    price: displayAskingPrice(listing.price_text, listing.price_eur),
     priceFlag: isSuspiciousPrice(listing.price_text, listing.price_eur),
     year: listing.model_year || 'Year unknown',
     hours,
@@ -1319,23 +1837,40 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     won: reconciled.won,
     lost: reconciled.lost,
     booked: reconciled.booked,
+    callback: reconciled.callback,
     awaiting: reconciled.awaiting,
-    ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
+    thinReply: reconciled.thinReply,
+    opportunity: reconciled.opportunity,
+    callbackAt: calls.callback_at || conversation.last_inbound_at || last?.at || null,
+    bookedAt: conversation.calendar_booking?.start || listing.raw_data?.calendar_booking?.start || null,
+    callLog: calls.call_log,
+    lastCallAt: calls.last_call_at,
+    labels: calls.labels,
+    activityAt: Date.parse(activityIso) || 0,
+    ago: relativeAgo(activityIso),
     snippet: last?.message || 'No messages yet',
     fields: [
       { k: 'Model year', v: listing.model_year || '-' },
       { k: 'Hours', v: hours },
-      { k: 'Asking price', v: listing.price_text || '-' },
+      { k: 'Asking price', v: displayAskingPrice(listing.price_text, listing.price_eur) },
       { k: 'Registration', v: listing.registration_number || 'Ei rekisterissä' },
       { k: 'Location', v: listing.location || '-' },
       { k: 'Seller prospect', v: listing.seller_name || listing.prospect_id || '-' },
       { k: 'Phone', v: conversation.number || listing.normalized_phone || '-' },
       { k: 'Nettikone ID', v: listing.nettikone_id || '-' },
     ],
+    facts: [
+      { k: 'Location', v: city === '—' ? '—' : city.toLocaleUpperCase('fi-FI') },
+      { k: 'Address', v: address || 'Not recorded', dim: !address },
+      { k: 'Previous service', v: listing.category || listing.listing_type || 'Not recorded', dim: !listing.category && !listing.listing_type },
+      { k: 'Last visit', v: calls.last_call_at ? formatActivityWhen(calls.last_call_at) : 'Not recorded', dim: !calls.last_call_at },
+      { k: 'Source', v: listing.seller_type || 'Nettikone' },
+    ],
     msgs: (conversation.messages || []).map((message) => ({
       id: message.id,
       who: message.sender || (message.direction === 'outbound' ? 'NordKone' : 'Seller'),
       when: formatHelsinkiTime(message.at),
+      at: message.at,
       text: message.message,
       out: message.direction === 'outbound',
     })),
@@ -1368,6 +1903,15 @@ function whatsAppHref(phone) {
   return `https://wa.me/${String(phone || '').replace(/[^\d]/g, '')}`;
 }
 
+const QUEUE_MAX_AGE_MS = 40 * 24 * 60 * 60 * 1000;
+
+function isLiveQueueLead(lead) {
+  if (!lead?.booked && !lead?.callback) return false;
+  const at = Date.parse(lead.bookedAt || lead.callbackAt || 0);
+  if (!Number.isFinite(at) || !at) return true;
+  return Date.now() - at <= QUEUE_MAX_AGE_MS;
+}
+
 function OverviewSkeleton({ mobile = false }) {
   if (mobile) {
     return (
@@ -1379,6 +1923,11 @@ function OverviewSkeleton({ mobile = false }) {
               <div className="skel skel-num" />
             </div>
           ))}
+          <div className="m-card m-pipe skel-card" style={{ animationDelay: '280ms' }}>
+            <div className="skel skel-line" style={{ width: 88 }} />
+            <div className="skel skel-num" />
+            <div className="skel skel-line" style={{ width: '70%', marginTop: 8 }} />
+          </div>
         </div>
         <div className="skel-block" style={{ marginTop: 20 }}>
           <div className="skel skel-line" style={{ width: 140, marginBottom: 16 }} />
@@ -1397,10 +1946,13 @@ function OverviewSkeleton({ mobile = false }) {
   return (
     <div className="scroll page-in">
       <div className="kpis">
-        <div className="card card-wide skel-card" style={{ animationDelay: '40ms' }}><div className="skel skel-line" style={{ width: 90 }} /><div className="skel skel-chart" /><div className="skel skel-num" /></div>
-        <div className="card card-mid skel-card" style={{ animationDelay: '110ms' }}><div className="skel skel-line" style={{ width: 110 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-mid skel-card" style={{ animationDelay: '180ms' }}><div className="skel skel-line" style={{ width: 80 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 80, marginTop: 10 }} /></div>
-        <div className="card card-wide skel-card" style={{ animationDelay: '250ms' }}><div className="skel skel-line" style={{ width: 70 }} /><div className="skel skel-num" style={{ marginTop: 18 }} /><div className="skel skel-line" style={{ width: 180, marginTop: 10 }} /></div>
+        {['90', '110', '80', '80', '70'].map((width, index) => (
+          <div className="card skel-card" key={width + index} style={{ animationDelay: `${40 + index * 70}ms` }}>
+            <div className="skel skel-line" style={{ width: Number(width) }} />
+            <div className="skel skel-num" style={{ marginTop: 10 }} />
+            <div className="skel skel-line" style={{ width: 96, marginTop: 10 }} />
+          </div>
+        ))}
       </div>
       <div className="charts">
         <div className="card flow-card skel-card" style={{ animationDelay: '280ms' }}>
@@ -1437,7 +1989,7 @@ function CalendarSkeleton() {
         <div className="skel skel-line" style={{ width: 90, marginLeft: 12 }} />
       </div>
       <div className="week-grid">
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, index) => (
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
           <div className="day-col" key={day} style={{ animationDelay: `${index * 60}ms` }}>
             <div className="day-head">
               <div className="skel skel-line" style={{ width: 28 }} />

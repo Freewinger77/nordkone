@@ -1,0 +1,149 @@
+{
+  "id": "nk-scrape-plan-no-5k",
+  "saved_at": "2026-08-31T09:35:00.000Z",
+  "status": "ready_not_started",
+  "hold": "Keep the existing 5k dumps. Do not import anything into the desk until we pick a mix. Outbound stays off.",
+  "policy": {
+    "price_min": null,
+    "price_filter": "none",
+    "never_again": "Do not pass pfrom=5000 or any asking-price floor on new Nettikone searches.",
+    "country": "Finland",
+    "country_param": "id_country[]=73",
+    "sellers": "all",
+    "posted_by": null,
+    "keep_seller_type_on_row": true,
+    "import_to_desk": false,
+    "method": "Chrome / puppeteer-core, same phone flow as the Finland dumps (description first, then Näytä numero / textToImage).",
+    "skip_ids_from": [
+      "nk-finland-construction.json",
+      "nk-finland-missing-private.json"
+    ],
+    "output_dir": "repo root",
+    "output_file": "nk-finland-relevant-all.json"
+  },
+  "why": "The 5k floor dropped cheap but real NordKone machines (mini loaders, attachments, older tractors, private trailers). From now on scrape every relevant listing in Finland, any price, private and dealer, and filter later.",
+  "already_have": {
+    "nk-finland-construction.json": {
+      "n": 3758,
+      "scope": "maarakennus + nosturit, Finland, ALL sellers, price >= 5000"
+    },
+    "nk-finland-missing-private.json": {
+      "n": 1788,
+      "scope": "maatalouskoneet + kuljetuskalusto + metsakoneet + materiaalinkasittely + tyokoneet + ymparistokoneet, Finland, PRIVATE only, price >= 5000"
+    },
+    "unique_ids": 5546,
+    "holes": [
+      "Everything under 5000 € in those searches",
+      "Dealers in the six non-construction departments",
+      "Relevant leftover types not in those department crawls"
+    ]
+  },
+  "taxonomy": {
+    "YES": [
+      { "id": "excavators", "slug": "kaivinkone", "fi_all": 1751 },
+      { "id": "loaders", "slug": "kuormaajat", "fi_all": 1036 },
+      { "id": "telehandlers", "slug": "kurottajat", "fi_all": 121 },
+      { "id": "mini_loaders", "slug": "pienkuormaajat", "fi_all": 166 },
+      { "id": "backhoe_loaders", "slug": "kaivurikuormaajat", "fi_all": 129 },
+      { "id": "tractors", "slug": "traktorit", "fi_all": 2122 },
+      { "id": "trucks", "slug": "kuorma-autot", "fi_all": 1818 },
+      { "id": "trailers", "slug": "peravaunut", "fi_all": 813 },
+      { "id": "forestry", "slug": "metsakoneet", "fi_all": 1926 },
+      { "id": "cranes", "slug": "nosturit", "fi_all": 358 },
+      { "id": "dumpers", "slug": "dumpperi", "note": "confirm slug on run; under maarakennus if 404" },
+      { "id": "dozers", "slug": "puskutraktorit", "note": "confirm slug on run" },
+      { "id": "skid_steers", "slug": "liukuohjatut-kuormaajat", "note": "confirm slug on run" },
+      { "id": "crushers", "slug": "murskaimet", "note": "confirm slug on run" },
+      { "id": "drilling", "slug": "porauskalusto", "note": "confirm slug on run" },
+      { "id": "ag_trailers", "slug": "maatalouskoneet/traktorin-perakarryt-ja-maatalous-peravaunut", "research": 570 },
+      { "id": "excavator_attachments", "slug": "lisavarusteet-ja-kaivinkoneen-lisalaitteet", "note": "NordKone sells these. Include all prices. Tag cheap later for outreach, do not drop at scrape." }
+    ],
+    "PROBABLY": [
+      { "id": "earthmoving_rest", "slug": "maarakennus", "fi_all": 5980, "note": "Catches dozers, dumpers, road kit, leftover earthmoving not in YES slugs." },
+      { "id": "agriculture_rest", "slug": "maatalouskoneet", "fi_all": 9295, "note": "Tractors + ag trailers plus hay/tillage. Keep all; filter hay later if needed." },
+      { "id": "transport_rest", "slug": "kuljetuskalusto", "fi_all": 4647, "note": "Trucks, heavy trailers, machine transporters, semi-trailers." },
+      { "id": "material_handling", "slug": "materiaalinkasittely", "fi_all": 1222 },
+      { "id": "work_machines", "slug": "tyokoneet", "fi_all": 1036 },
+      { "id": "municipal", "slug": "ymparistokoneet", "fi_all": 1660 }
+    ],
+    "NO": [
+      "hallit-ja-katokset",
+      "kontit-ja-sailiot",
+      "korjaamolaitteet",
+      "hoitotuotteet-kemikaalit-oljyt",
+      "nettivaraosa spare-parts types",
+      "kevyt-perakarry",
+      "busses / coaches",
+      "vans & light commercials as a target (leave if they appear inside a YES search, do not crawl them as a category)"
+    ]
+  },
+  "waves": [
+    {
+      "id": 1,
+      "name": "YES slugs, Finland, no price floor, all sellers",
+      "search_query": "id_country[]=73&sortCol=enrolldate&ord=DESC",
+      "jobs": [
+        "kaivinkone",
+        "kuormaajat",
+        "kurottajat",
+        "pienkuormaajat",
+        "kaivurikuormaajat",
+        "traktorit",
+        "kuorma-autot",
+        "peravaunut",
+        "metsakoneet",
+        "nosturit"
+      ],
+      "fi_all_sum": 10240,
+      "skip_known_ids": true,
+      "expected_new_after_skip": "roughly 5k–7k; many excavators/loaders/cranes already in the 5k construction dump"
+    },
+    {
+      "id": 2,
+      "name": "YES extras that 404-check first",
+      "jobs": [
+        "dumpperi",
+        "puskutraktorit",
+        "liukuohjatut-kuormaajat",
+        "murskaimet",
+        "porauskalusto",
+        "maatalouskoneet/traktorin-perakarryt-ja-maatalous-peravaunut",
+        "lisavarusteet-ja-kaivinkoneen-lisalaitteet"
+      ],
+      "on_404": "fall back to the parent department page and keep going"
+    },
+    {
+      "id": 3,
+      "name": "PROBABLY full departments, skip IDs already stored",
+      "jobs": [
+        "maarakennus",
+        "maatalouskoneet",
+        "kuljetuskalusto",
+        "materiaalinkasittely",
+        "tyokoneet",
+        "ymparistokoneet"
+      ],
+      "fi_all_sum": 23840,
+      "note": "This is the completeness pass. Most YES-slug rows will already be skipped by ID. Remaining is hay kit, municipal, forklifts, sub-5k private, and dealers in ag/transport/forestry."
+    }
+  ],
+  "runtime": {
+    "script": "/tmp/nk-scrape/run-missing.mjs pattern; new run must omit pfrom",
+    "concurrency": 3,
+    "resume": true,
+    "persist_every": 10,
+    "expected_wall_clock": "YES wave first (hours, not a Vercel cron). Department completeness pass is the long one (~15k–20k new pages if we do not skip well).",
+    "do_not_use": [
+      "scripts/scrape-nettikone.js against this full set (Alma/Sammio block + desk upsert)",
+      "pfrom=5000",
+      "desk import",
+      "outbound on"
+    ]
+  },
+  "volume_sketch": {
+    "finland_relevant_departments_all_prices": 26124,
+    "already_scraped_unique": 5546,
+    "upper_bound_still_to_fetch": 20578,
+    "after_YES_slug_dedupe_guess": "closer to 12k–16k new listing pages because department totals double-count some types and include NO junk we will skip by URL/title"
+  }
+}

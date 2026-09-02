@@ -11,6 +11,7 @@ import {
   listingMatchesOutboundFilters,
   parseOutboundFilters,
 } from '../../shared/machine-class.js';
+import { applyCallLog } from '../../shared/call-log.js';
 
 const router = Router();
 
@@ -118,57 +119,36 @@ router.patch('/leads/status', async (req, res) => {
     desk_status_updated_at: now,
   };
 
-  const { data: updated, error: listingError } = await supabase
-    .from('nordkone_listings')
-    .update({
-      status: listingStatus,
-      raw_data: rawData,
-      updated_at: now,
-    })
-    .eq('id', listing.id)
-    .eq('client_key', CLIENT_KEY)
-    .select()
-    .single();
-
-  if (listingError) throw listingError;
-
-  if (listing.prospect_id) {
-    await supabase
-      .from('campaign_prospects')
-      .update({
-        status: listingStatus === 'opted_out' ? 'opted_out' : 'replied',
-        interest_status: deskStatus,
-        updated_at: now,
-      })
-      .eq('id', listing.prospect_id)
-      .eq('client_key', CLIENT_KEY);
-  }
-
-  const { data: session } = await supabase
-    .from('campaign_outbound_sessions')
-    .select('id')
-    .eq('client_key', CLIENT_KEY)
-    .eq('source_system', SOURCE_SYSTEM)
-    .eq('source_customer_id', listing.nettikone_id)
-    .maybeSingle();
-
-  if (session?.id) {
-    await supabase
-      .from('campaign_outbound_sessions')
-      .update({
-        status: listingStatus,
-        interest_status: deskStatus,
-        raw_data: {
-          ...((await loadSessionRaw(supabase, session.id)) || {}),
-          desk_status: deskStatus,
-        },
-        updated_at: now,
-      })
-      .eq('id', session.id)
-      .eq('client_key', CLIENT_KEY);
-  }
-
+  const updated = await persistListingDesk(supabase, listing, { deskStatus, rawData, now });
   res.json({ listing: listingRowToResponse(updated) });
+});
+
+router.post('/leads/call', async (req, res) => {
+  const supabase = createSupabase();
+  const listing = await loadListing(supabase, {
+    listing_id: req.body?.listing_id,
+    nettikone_id: req.body?.nettikone_id || req.body?.source_customer_id,
+  });
+
+  const applied = applyCallLog({
+    listing: {
+      ...listing,
+      desk_status: listing.raw_data?.desk_status || listing.desk_status || null,
+    },
+    outcome: req.body?.outcome || null,
+    comment: req.body?.comment || '',
+    snooze: Boolean(req.body?.snooze),
+    now: new Date(),
+  });
+
+  const now = applied.entry.at;
+  const updated = await persistListingDesk(supabase, listing, {
+    deskStatus: applied.desk_status,
+    rawData: applied.raw_data,
+    now,
+  });
+
+  res.json({ listing: listingRowToResponse(updated), entry: applied.entry });
 });
 
 router.get('/interested', async (_req, res) => {
@@ -249,6 +229,9 @@ router.get('/conversations', async (req, res) => {
       outbound_count: session.outbound_count || 0,
       last_inbound_at: session.last_inbound_at,
       last_outbound_at: session.last_outbound_at,
+      call_log: listing?.call_log || session.raw_data?.call_log || [],
+      callback_at: listing?.callback_at || session.raw_data?.callback_at || null,
+      last_call_at: listing?.last_call_at || session.raw_data?.last_call_at || null,
       updated_at: session.updated_at,
       calendar_booking: calendarBooking,
       calendar_action: session.raw_data?.calendar_action || listing?.raw_data?.calendar_action || null,
@@ -919,6 +902,72 @@ async function loadListing(supabase, { listing_id, nettikone_id }) {
 
   if (error) throw error;
   return data;
+}
+
+async function persistListingDesk(supabase, listing, { deskStatus, rawData, now }) {
+  const listingStatus = deskStatusToListingStatus(deskStatus);
+  if (!listingStatus) {
+    const error = new Error('unsupported desk_status');
+    error.status = 400;
+    throw error;
+  }
+
+  const { data: updated, error: listingError } = await supabase
+    .from('nordkone_listings')
+    .update({
+      status: listingStatus,
+      raw_data: rawData,
+      updated_at: now,
+    })
+    .eq('id', listing.id)
+    .eq('client_key', CLIENT_KEY)
+    .select()
+    .single();
+
+  if (listingError) throw listingError;
+
+  if (listing.prospect_id) {
+    await supabase
+      .from('campaign_prospects')
+      .update({
+        status: listingStatus === 'opted_out' ? 'opted_out' : 'replied',
+        interest_status: deskStatus,
+        updated_at: now,
+      })
+      .eq('id', listing.prospect_id)
+      .eq('client_key', CLIENT_KEY);
+  }
+
+  const { data: session } = await supabase
+    .from('campaign_outbound_sessions')
+    .select('id')
+    .eq('client_key', CLIENT_KEY)
+    .eq('source_system', SOURCE_SYSTEM)
+    .eq('source_customer_id', listing.nettikone_id)
+    .maybeSingle();
+
+  if (session?.id) {
+    const sessionRaw = (await loadSessionRaw(supabase, session.id)) || {};
+    await supabase
+      .from('campaign_outbound_sessions')
+      .update({
+        status: listingStatus,
+        interest_status: deskStatus,
+        raw_data: {
+          ...sessionRaw,
+          desk_status: deskStatus,
+          call_log: rawData.call_log || sessionRaw.call_log,
+          callback_at: rawData.callback_at ?? sessionRaw.callback_at,
+          last_call_at: rawData.last_call_at || sessionRaw.last_call_at,
+          last_call_outcome: rawData.last_call_outcome || sessionRaw.last_call_outcome,
+        },
+        updated_at: now,
+      })
+      .eq('id', session.id)
+      .eq('client_key', CLIENT_KEY);
+  }
+
+  return updated;
 }
 
 function deskStatusToListingStatus(deskStatus) {

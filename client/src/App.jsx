@@ -34,6 +34,7 @@ import {
 import { Login } from './Login.jsx';
 import { PriceSlider } from './lib/PriceSlider.jsx';
 import { machineClassMeta } from '../../shared/machine-class.js';
+import { CALL_OUTCOMES, listingCallFields, mergeActivity } from '../../shared/call-log.js';
 import './styles.css';
 
 const canUseControls = (import.meta.env.VITE_DASHBOARD_MODE || 'admin') !== 'client_fi';
@@ -221,7 +222,7 @@ function App() {
   function openLead(lead, source = view) {
     setFrom(source === 'lead' ? 'overview' : source);
     setSelectedLeadId(lead.id);
-    setLeadTab('chat');
+    setLeadTab(lead.opportunity || lead.callback || lead.booked ? 'call' : 'chat');
     setAdvOpen(true);
     setMenuFor(null);
     setView('lead');
@@ -307,6 +308,21 @@ function App() {
     } catch (statusError) {
       setError(statusError.message);
     }
+  }
+
+  async function logCall(lead, { outcome = null, comment = '', snooze = false } = {}) {
+    if (!canUseControls || !lead?.listingId) return;
+    setError('');
+    await apiSend('/api/leads/call', {
+      method: 'POST',
+      body: {
+        nettikone_id: lead.listingId,
+        outcome,
+        comment,
+        snooze,
+      },
+    });
+    await load();
   }
 
   async function sendListing(listing) {
@@ -475,6 +491,7 @@ function App() {
     sendListing,
     setCapDraft,
     setDeskStatus,
+    logCall,
     setLeadTab,
     setMenuFor,
     setPage,
@@ -982,6 +999,97 @@ function LeadTable({ ctx, compact, hideToolbar, rows, showPager, source = 'overv
   );
 }
 
+function CallPanel({ ctx, lead }) {
+  const [outcome, setOutcome] = useState(null);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const activity = mergeActivity(lead.msgs, lead.callLog);
+
+  async function save(snooze) {
+    if (!ctx.canUseControls) return;
+    if (!snooze && !outcome) {
+      setNote('Pick what happened on the call.');
+      return;
+    }
+    setBusy(true);
+    setNote('');
+    try {
+      await ctx.logCall(lead, { outcome, comment, snooze });
+      setComment('');
+      setOutcome(null);
+      setNote(snooze ? 'Snoozed until tomorrow morning.' : 'Call logged.');
+    } catch (error) {
+      setNote(error.message || 'Could not save the call.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="call-panel">
+      <dl className="fields call-facts">
+        {lead.facts.map((field) => (
+          <div className="field" key={field.k}>
+            <dt>{field.k}</dt>
+            <dd className={field.dim ? 'muted' : ''}>{field.v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="call-log-block">
+        <div className="eyebrow">Log a call</div>
+        <div className="call-outcomes">
+          {CALL_OUTCOMES.map((option) => (
+            <button
+              className={outcome === option.id ? 'on' : ''}
+              disabled={busy || !ctx.canUseControls}
+              key={option.id}
+              onClick={() => setOutcome((current) => (current === option.id ? null : option.id))}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          disabled={busy || !ctx.canUseControls}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder="What happened on the call?"
+          rows={3}
+          value={comment}
+        />
+        {note ? <div className={note.includes('Could not') || note.startsWith('Pick') ? 'call-note err' : 'call-note'}>{note}</div> : null}
+        <div className="call-actions">
+          <button className="btn btn-dark" disabled={busy || !ctx.canUseControls} onClick={() => save(false)} type="button">
+            {busy ? 'Saving...' : 'Save outcome'}
+          </button>
+          <button className="btn btn-ring" disabled={busy || !ctx.canUseControls} onClick={() => save(true)} type="button">
+            Snooze
+          </button>
+        </div>
+      </div>
+      <div className="call-activity">
+        <div className="eyebrow">Activity</div>
+        {activity.length ? (
+          <ol>
+            {activity.map((item) => (
+              <li key={item.id}>
+                <span className={`call-dot ${item.kind}`} />
+                <div>
+                  <div className="call-activity-title">{item.title}</div>
+                  <div className="muted">{item.at ? formatHelsinkiTime(item.at) : ''}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted">No calls or messages yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LeadDrawer({ ctx }) {
   const lead = ctx.selectedLead;
   const inQ = ctx.queue.includes(lead.id);
@@ -1045,6 +1153,9 @@ function LeadDrawer({ ctx }) {
               ))}
               {!lead.msgs.length ? <p className="muted">No stored messages for this session.</p> : null}
             </div>
+          </div>
+          <div className="call-col">
+            <CallPanel key={lead.id} ctx={ctx} lead={lead} />
           </div>
           {ctx.advOpen ? (
             <div className="adv-col">
@@ -1129,6 +1240,7 @@ function LeadSheet({ ctx }) {
         </div>
         <div className="seg">
           <button className={ctx.leadTab === 'chat' ? 'on' : ''} onClick={() => ctx.setLeadTab('chat')} type="button">Chat</button>
+          <button className={ctx.leadTab === 'call' ? 'on' : ''} onClick={() => ctx.setLeadTab('call')} type="button">Call</button>
           <button className={ctx.leadTab === 'advert' ? 'on' : ''} onClick={() => ctx.setLeadTab('advert')} type="button">Advert</button>
         </div>
       </div>
@@ -1145,6 +1257,8 @@ function LeadSheet({ ctx }) {
               </article>
             ))}
           </div>
+        ) : ctx.leadTab === 'call' ? (
+          <CallPanel key={lead.id} ctx={ctx} lead={lead} />
         ) : (
           <div>
             <div className="row" style={{ paddingBottom: 10 }}>
@@ -1175,12 +1289,12 @@ function LeadSheet({ ctx }) {
         <button className="btn btn-ring" onClick={() => ctx.toggleQueue(lead.id)} style={{ flex: 1, height: 48 }} type="button">
           {ctx.queue.includes(lead.id) ? 'In work queue' : 'Add to work queue'}
         </button>
-        {ctx.leadTab === 'chat' ? null : (
+        {ctx.leadTab === 'advert' ? (
           <a className="btn btn-dark" href={whatsAppHref(lead.phone)} rel="noreferrer" style={{ flex: 1, height: 48 }} target="_blank">
             <WhatsAppMark size={18} />
             Open chat
           </a>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -1588,6 +1702,11 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
   const reconciled = reconcileLead({ listing, conversation, calendarCalls });
   const last = (conversation.messages || []).at(-1);
   const hours = listing.operating_hours ? `${String(listing.operating_hours).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} h` : '—';
+  const calls = listingCallFields({ ...listing, ...conversation, raw_data: listing.raw_data || conversation.raw_data || {} });
+  const activityIso = [calls.last_call_at, last?.at, conversation.last_inbound_at, conversation.updated_at, listing.updated_at]
+    .filter(Boolean)
+    .sort((left, right) => (Date.parse(right) || 0) - (Date.parse(left) || 0))[0];
+  const city = (listing.location || conversation.location || '').split(',')[0] || '—';
   return {
     id,
     listingId: listing.nettikone_id || '',
@@ -1617,10 +1736,12 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
     awaiting: reconciled.awaiting,
     thinReply: reconciled.thinReply,
     opportunity: reconciled.opportunity,
-    callbackAt: conversation.last_inbound_at || last?.at || null,
+    callbackAt: calls.callback_at || conversation.last_inbound_at || last?.at || null,
     bookedAt: conversation.calendar_booking?.start || listing.raw_data?.calendar_booking?.start || null,
-    activityAt: Date.parse(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at) || 0,
-    ago: relativeAgo(last?.at || conversation.last_inbound_at || conversation.updated_at || listing.updated_at),
+    callLog: calls.call_log,
+    lastCallAt: calls.last_call_at,
+    activityAt: Date.parse(activityIso) || 0,
+    ago: relativeAgo(activityIso),
     snippet: last?.message || 'No messages yet',
     fields: [
       { k: 'Model year', v: listing.model_year || '-' },
@@ -1632,10 +1753,17 @@ function toLead({ listing = {}, conversation = {}, calendarCalls = [] }) {
       { k: 'Phone', v: conversation.number || listing.normalized_phone || '-' },
       { k: 'Nettikone ID', v: listing.nettikone_id || '-' },
     ],
+    facts: [
+      { k: 'Location', v: city },
+      { k: 'Listing', v: listing.nettikone_id ? `#${listing.nettikone_id}` : '—' },
+      { k: 'Last call', v: calls.last_call_at ? formatHelsinkiTime(calls.last_call_at) : 'Not recorded', dim: !calls.last_call_at },
+      { k: 'Source', v: listing.seller_type || 'Nettikone' },
+    ],
     msgs: (conversation.messages || []).map((message) => ({
       id: message.id,
       who: message.sender || (message.direction === 'outbound' ? 'NordKone' : 'Seller'),
       when: formatHelsinkiTime(message.at),
+      at: message.at,
       text: message.message,
       out: message.direction === 'outbound',
     })),

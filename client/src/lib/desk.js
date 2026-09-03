@@ -41,7 +41,13 @@ export function listingToDeskStatus(listing = {}, conversation = {}, calendarCal
   return reconcileLead({ listing, conversation, calendarCalls }).stage;
 }
 
-export function listingStatusLabel(status) {
+export function listingStatusLabel(status, listing = {}) {
+  if (listing.listing_active === false || listing.removed_at || listing.raw_data?.listing_active === false) {
+    return 'Taken down';
+  }
+  if (status === 'ignored' && listing.ineligible_reason === 'removed_from_nettikone') {
+    return 'Taken down';
+  }
   const map = {
     eligible: 'Eligible',
     contacted: 'In session',

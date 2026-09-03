@@ -849,6 +849,10 @@ button {
   padding: 0 8px;
   border-radius: 80px;
 }
+.pill.warn {
+  background: rgba(255, 71, 71, 0.12);
+  color: rgb(140, 30, 30);
+}
 
 .detail {
   width: 380px;

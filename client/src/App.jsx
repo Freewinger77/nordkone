@@ -295,6 +295,25 @@ function App() {
     }
   }
 
+  async function runCatalogSync() {
+    if (!canUseControls) return;
+    setScraping(true);
+    setError('');
+    setScrapeNote('');
+    try {
+      const result = await apiSend('/api/scrape/sync', { method: 'POST', body: {} });
+      const stats = result.stats || {};
+      setScrapeNote(
+        `${stats.active_on_nettikone || 0} live on Nettikone · ${stats.new_imported || 0} new · ${stats.marked_removed || 0} taken down`
+      );
+      await load();
+    } catch (syncError) {
+      setError(syncError.message);
+    } finally {
+      setScraping(false);
+    }
+  }
+
   async function setDeskStatus(lead, deskStatus) {
     if (!canUseControls || !lead?.listingId) return;
     setMenuFor(null);
@@ -495,6 +514,7 @@ function App() {
     },
     remainingToday: control?.remaining_today ?? Math.max(dailyCap - sentToday, 0),
     runScrape,
+    runCatalogSync,
     saveCap: () => updateSettings({ daily_cap: Math.max(Number(capDraft) || 0, 0) }),
     saveOutboundFilters: (outbound_filters) => updateSettings({ outbound_filters }),
     settings,
@@ -553,9 +573,14 @@ function DesktopDesk({ ctx }) {
           <div className="grow" />
           {ctx.scrapeNote ? <span className="scrape-note">{ctx.scrapeNote}</span> : null}
           {ctx.canUseControls ? (
-            <button className="btn btn-soft" disabled={ctx.scraping} onClick={ctx.runScrape} type="button">
-              {ctx.scraping ? 'Searching...' : 'Find new leads'}
-            </button>
+            <>
+              <button className="btn btn-soft" disabled={ctx.scraping} onClick={ctx.runCatalogSync} type="button">
+                {ctx.scraping ? 'Syncing...' : 'Sync catalog'}
+              </button>
+              <button className="btn btn-soft" disabled={ctx.scraping} onClick={ctx.runScrape} type="button">
+                {ctx.scraping ? 'Searching...' : 'Find new leads'}
+              </button>
+            </>
           ) : null}
         </header>
         {ctx.error ? <div className="error">{ctx.error}</div> : null}
@@ -828,7 +853,7 @@ function ListingsPage({ ctx }) {
               <div className="muted">{row.seller_name || (row.prospect_id ? `Seller ${row.prospect_id}` : 'Seller')}</div>
             </div>
             <div style={{ width: 96, flexShrink: 0 }}>
-              <span className="pill">{listingStatusLabel(row.status)}</span>
+              <span className={`pill ${row.listing_active === false || row.removed_at ? 'warn' : ''}`}>{listingStatusLabel(row.status, row)}</span>
             </div>
           </div>
         ))}
@@ -1758,7 +1783,7 @@ function MobileListings({ ctx }) {
             <h3>{listing.machine_title}</h3>
             <div className="muted">{listing.nettikone_id} · {listing.location || 'No location'}</div>
             <div className="row" style={{ marginTop: 12 }}>
-              <span className="pill">{listingStatusLabel(listing.status)}</span>
+              <span className={`pill ${listing.listing_active === false || listing.removed_at ? 'warn' : ''}`}>{listingStatusLabel(listing.status, listing)}</span>
               <span className="muted">{listing.model_year || 'Year unknown'}</span>
               <span className="grow" />
               <span className={`price ${isSuspiciousPrice(listing.price_text, listing.price_eur) ? 'warn' : ''}`}>{displayAskingPrice(listing.price_text, listing.price_eur)}</span>

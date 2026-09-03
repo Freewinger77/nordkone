@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import * as cheerio from 'cheerio';
 import { firstValidPhone, extractPhoneCandidates } from '../api/lib/phone.js';
-import { classifyListing } from '../shared/machine-class.js';
+import { classifyListing, listingMatchesOutboundFilters, parseOutboundFilters } from '../shared/machine-class.js';
 import { recoverAskingPrice, storedPriceText } from '../shared/price-text.js';
 import { createSupabase, hasSupabaseConfig } from '../api/lib/supabase.js';
 import { CLIENT_KEY, SOURCE_SYSTEM } from '../api/lib/campaign.js';
@@ -173,6 +173,222 @@ export async function runScrape(options = {}) {
   return stats;
 }
 
+export function isListingActive(row = {}) {
+  const raw = row.raw_data || {};
+  return raw.listing_active !== false;
+}
+
+export function buildCatalogDiff(seenIds, existingRows = []) {
+  const seen = seenIds instanceof Set ? seenIds : new Set(seenIds);
+  const existingById = new Map(existingRows.map((row) => [String(row.nettikone_id), row]));
+  const reseen = [];
+  const removed = [];
+
+  for (const row of existingRows) {
+    const id = String(row.nettikone_id);
+    if (seen.has(id)) reseen.push(row);
+    else if (isListingActive(row)) removed.push(row);
+  }
+
+  const newIds = [...seen].filter((id) => !existingById.has(String(id)));
+  return { reseen, removed, newIds };
+}
+
+export function removalPatch(row = {}, now = new Date().toISOString()) {
+  const raw = {
+    ...(row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {}),
+    listing_active: false,
+    removed_at: now,
+    removal_reason: 'not_in_search_index',
+    last_catalog_sync_at: now,
+  };
+  const patch = {
+    raw_data: raw,
+    updated_at: now,
+  };
+
+  if (row.status === 'eligible') {
+    patch.status = 'ignored';
+    patch.ineligible_reason = 'removed_from_nettikone';
+  }
+
+  return patch;
+}
+
+export async function runCatalogSync(options = {}) {
+  cookieJar.clear();
+
+  const dryRun = Boolean(options.dryRun || options['dry-run']);
+  const category = options.category || DEFAULT_CATEGORY;
+  const postedBy = options.postedBy || options['posted-by'] || DEFAULT_POSTED_BY;
+  const maxPages = positiveNumber(options.maxPages || options.max_pages, 300);
+  const maxMs = positiveNumber(options.maxMs || options.max_ms, 540000);
+  const maxNewListings = positiveNumber(options.maxNewListings || options.max_new_listings, 500);
+  const markRemoved = options.markRemoved !== false && options.markRemoved !== 'false';
+  const importNew = options.importNew !== false && options.importNew !== 'false';
+  const snapshotPath = options.snapshotPath || options.snapshot_path || null;
+  const supabase = !dryRun && hasSupabaseConfig() ? createSupabase() : null;
+
+  if (!supabase && !dryRun) {
+    throw new Error('Supabase is required for catalog sync');
+  }
+
+  const scrapeScope = `${category}:${postedBy || 'all'}`;
+  const startedAt = Date.now();
+  const budgetLeft = () => (maxMs ? maxMs - (Date.now() - startedAt) : Number.POSITIVE_INFINITY);
+  const seenIds = new Set();
+  const seenUrls = new Map();
+  const stats = {
+    category,
+    postedBy,
+    scrape_scope: scrapeScope,
+    pages_scanned: 0,
+    active_on_nettikone: 0,
+    already_on_platform: 0,
+    touched_last_seen: 0,
+    reactivated: 0,
+    new_discovered: 0,
+    new_scraped: 0,
+    new_imported: 0,
+    skipped_filter: 0,
+    skipped_no_phone: 0,
+    marked_removed: 0,
+    failed: 0,
+    stop_reason: null,
+  };
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (budgetLeft() < 5000) {
+      stats.stop_reason = 'time_budget';
+      break;
+    }
+
+    let listingUrls = [];
+    try {
+      listingUrls = await discoverListingUrlsForPage({
+        page,
+        category,
+        postedBy,
+        startUrl: buildSearchUrl({ category, postedBy, page: 1 }),
+        hasCustomUrl: false,
+        timeoutMs: Math.min(15000, Math.max(budgetLeft() - 2000, 4000)),
+      });
+    } catch (error) {
+      if (/HTTP 410|HTTP 404/.test(String(error.message || ''))) {
+        stats.stop_reason = stats.pages_scanned ? 'catalog_complete' : 'no_results';
+        break;
+      }
+      throw error;
+    }
+
+    if (!listingUrls.length) {
+      stats.stop_reason = stats.pages_scanned ? 'catalog_complete' : 'no_results';
+      break;
+    }
+
+    stats.pages_scanned += 1;
+    for (const url of listingUrls) {
+      const id = extractNettikoneId(url);
+      if (!id) continue;
+      seenIds.add(id);
+      seenUrls.set(id, url);
+    }
+  }
+
+  if (!stats.stop_reason) stats.stop_reason = 'max_pages_reached';
+  stats.active_on_nettikone = seenIds.size;
+
+  const snapshot = {
+    synced_at: new Date().toISOString(),
+    filters: { category, posted_by: postedBy, scrape_scope: scrapeScope },
+    stats: { ...stats },
+    active_ids: [...seenIds].sort(),
+  };
+
+  if (dryRun) {
+    return { stats, snapshot };
+  }
+
+  const outboundFilters = await loadOutboundFilters(supabase);
+  const existingRows = await loadScopeListings(supabase, category);
+  const diff = buildCatalogDiff(seenIds, existingRows);
+  stats.already_on_platform = diff.reseen.length;
+  stats.new_discovered = diff.newIds.length;
+
+  const now = new Date().toISOString();
+  stats.touched_last_seen = await touchReseenListings(supabase, diff.reseen, now, scrapeScope);
+  stats.reactivated = diff.reseen.filter((row) => row.raw_data?.listing_active === false).length;
+
+  if (importNew && diff.newIds.length) {
+    const importIds = diff.newIds.slice(0, maxNewListings);
+    await mapPool(importIds, LISTING_CONCURRENCY, async (nettikoneId) => {
+      if (budgetLeft() < 5000) {
+        stats.stop_reason = stats.stop_reason || 'time_budget';
+        return;
+      }
+
+      const url = seenUrls.get(nettikoneId);
+      if (!url) return;
+
+      try {
+        if (REQUEST_DELAY_MS) await sleep(REQUEST_DELAY_MS);
+        const listing = await scrapeListing(url, {
+          category,
+          timeoutMs: Math.min(15000, Math.max(budgetLeft() - 2000, 4000)),
+        });
+        stats.new_scraped += 1;
+        listing.raw_data = {
+          ...(listing.raw_data || {}),
+          listing_active: true,
+          scrape_scope: scrapeScope,
+          last_catalog_sync_at: now,
+        };
+
+        if (!listingMatchesOutboundFilters(listing, outboundFilters)) {
+          stats.skipped_filter += 1;
+          return;
+        }
+
+        if (!listing.normalized_phone) {
+          stats.skipped_no_phone += 1;
+        }
+
+        const result = await upsertListing(supabase, listing, { existing: null });
+        if (result.isNewListing) stats.new_imported += 1;
+      } catch (error) {
+        stats.failed += 1;
+        console.error(`Catalog import failed ${url}: ${error.message}`);
+      }
+    });
+  }
+
+  if (markRemoved && diff.removed.length) {
+    for (const row of diff.removed) {
+      const patch = removalPatch(row, now);
+      const { error } = await supabase
+        .from('nordkone_listings')
+        .update(patch)
+        .eq('id', row.id)
+        .eq('client_key', CLIENT_KEY);
+      if (error) {
+        stats.failed += 1;
+        console.error(`Mark removed failed ${row.nettikone_id}: ${error.message}`);
+        continue;
+      }
+      stats.marked_removed += 1;
+    }
+  }
+
+  snapshot.stats = { ...stats };
+
+  if (snapshotPath) {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(snapshotPath, JSON.stringify(snapshot, null, 2));
+  }
+
+  return { stats, snapshot };
+}
+
 export async function refreshStoredListings(options = {}) {
   const supabase = options.supabase || (hasSupabaseConfig() ? createSupabase() : null);
   if (!supabase) throw new Error('Supabase is required to refresh stored listings');
@@ -216,9 +432,13 @@ export async function refreshStoredListings(options = {}) {
       stats.refreshed += 1;
     } catch (error) {
       const message = String(error.message || '');
-      if (/HTTP 404|HTTP 410/.test(message)) stats.gone += 1;
-      else stats.failed += 1;
-      console.error(`Refresh failed ${url}: ${error.message}`);
+      if (/HTTP 404|HTTP 410/.test(message)) {
+        stats.gone += 1;
+        await markListingRemoved(supabase, row);
+      } else {
+        stats.failed += 1;
+        console.error(`Refresh failed ${url}: ${error.message}`);
+      }
     }
   });
 
@@ -227,6 +447,15 @@ export async function refreshStoredListings(options = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args['sync-catalog'] || args.syncCatalog) {
+    const result = await runCatalogSync({
+      ...args,
+      snapshotPath: args.snapshot || args.snapshotPath || 'nk-catalog-active.json',
+    });
+    console.log(`Catalog sync: ${JSON.stringify(result.stats)}`);
+    return;
+  }
+
   const started = new Date().toISOString();
   const stats = await runScrape({ ...args, scanAllPages: true });
   let stored = null;
@@ -435,6 +664,95 @@ async function upsertSellerProspect(supabase, listing) {
   return { row: data, isNew: true };
 }
 
+function chunk(items, size) {
+  const rows = [];
+  for (let index = 0; index < items.length; index += size) {
+    rows.push(items.slice(index, index + size));
+  }
+  return rows;
+}
+
+async function loadOutboundFilters(supabase) {
+  const { data, error } = await supabase
+    .from('campaign_client_config')
+    .select('copy_variants')
+    .eq('client_key', CLIENT_KEY)
+    .maybeSingle();
+
+  if (error) throw error;
+  return parseOutboundFilters(data?.copy_variants?.outbound_filters || {});
+}
+
+async function loadScopeListings(supabase, category) {
+  const rows = [];
+  let from = 0;
+
+  while (from < 10000) {
+    const { data, error } = await supabase
+      .from('nordkone_listings')
+      .select('id,nettikone_id,status,ineligible_reason,raw_data,category,department,last_seen_at')
+      .eq('client_key', CLIENT_KEY)
+      .or(`category.eq.${category},department.ilike.Kaivinkone`)
+      .range(from, from + 999);
+
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+    from += 1000;
+  }
+
+  return rows;
+}
+
+async function touchReseenListings(supabase, rows, now, scrapeScope) {
+  if (!rows.length) return 0;
+
+  const ids = rows.map((row) => row.nettikone_id).filter(Boolean);
+  for (const batch of chunk(ids, 200)) {
+    const { error } = await supabase
+      .from('nordkone_listings')
+      .update({ last_seen_at: now, updated_at: now })
+      .eq('client_key', CLIENT_KEY)
+      .in('nettikone_id', batch);
+    if (error) throw error;
+  }
+
+  for (const row of rows) {
+    const raw = {
+      ...(row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {}),
+      listing_active: true,
+      removed_at: null,
+      removal_reason: null,
+      scrape_scope: scrapeScope,
+      last_catalog_sync_at: now,
+    };
+    const patch = { raw_data: raw, updated_at: now };
+    if (row.status === 'ignored' && row.ineligible_reason === 'removed_from_nettikone') {
+      patch.status = 'eligible';
+      patch.ineligible_reason = null;
+    }
+
+    const { error } = await supabase
+      .from('nordkone_listings')
+      .update(patch)
+      .eq('id', row.id)
+      .eq('client_key', CLIENT_KEY);
+    if (error) throw error;
+  }
+
+  return ids.length;
+}
+
+async function markListingRemoved(supabase, row) {
+  const patch = removalPatch(row);
+  const { error } = await supabase
+    .from('nordkone_listings')
+    .update(patch)
+    .eq('id', row.id)
+    .eq('client_key', CLIENT_KEY);
+  if (error) throw error;
+}
+
 async function loadKnownListingIds(supabase) {
   const ids = new Set();
   let from = 0;
@@ -538,12 +856,26 @@ function toNordKoneListing(listing, { prospectId, existing }) {
     selected_phone: listing.selected_phone || existing?.selected_phone || null,
     normalized_phone: phone,
     phone_source: listing.normalized_phone ? listing.phone_source : existing?.phone_source || listing.phone_source,
-    status: existing?.status || (phone ? 'eligible' : 'ignored'),
-    ineligible_reason: phone ? listing.ineligible_reason : existing?.ineligible_reason || listing.ineligible_reason,
+    status:
+      existing?.status === 'ignored' && existing?.ineligible_reason === 'removed_from_nettikone'
+        ? phone
+          ? 'eligible'
+          : 'ignored'
+        : existing?.status || (phone ? 'eligible' : 'ignored'),
+    ineligible_reason:
+      existing?.status === 'ignored' && existing?.ineligible_reason === 'removed_from_nettikone' && phone
+        ? listing.ineligible_reason
+        : phone
+          ? listing.ineligible_reason
+          : existing?.ineligible_reason || listing.ineligible_reason,
     raw_data: {
       ...(existing?.raw_data && typeof existing.raw_data === 'object' ? existing.raw_data : {}),
       ...(listing.raw_data || {}),
       machine_class: listing.machine_class || listing.raw_data?.machine_class || classifyListing(listing),
+      listing_active: true,
+      removed_at: null,
+      removal_reason: null,
+      last_catalog_sync_at: now,
     },
     first_seen_at: existing?.first_seen_at || now,
     last_seen_at: now,

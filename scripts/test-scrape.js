@@ -1,4 +1,4 @@
-import { looksLikeBadPrice, mapPool, splitFreshListingUrls } from './scrape-nettikone.js';
+import { buildCatalogDiff, isListingActive, looksLikeBadPrice, mapPool, removalPatch, splitFreshListingUrls } from './scrape-nettikone.js';
 
 let failed = 0;
 
@@ -46,6 +46,30 @@ if (pooled.join(',') !== '2,4,6,8,10' || poolSeen.length !== 5) {
 
 if (looksLikeBadPrice(2_091_615, 119_225) !== true || looksLikeBadPrice(62_000, 60_000) !== false) {
   console.error('price guard should drop concatenated prices and keep modest moves');
+  failed += 1;
+}
+
+const diff = buildCatalogDiff(new Set(['100', '200']), [
+  { nettikone_id: '100', status: 'eligible', raw_data: {} },
+  { nettikone_id: '300', status: 'eligible', raw_data: {} },
+  { nettikone_id: '400', status: 'sold', raw_data: { listing_active: false } },
+]);
+if (diff.reseen.length !== 1 || diff.newIds.join(',') !== '200' || diff.removed.length !== 1 || diff.removed[0].nettikone_id !== '300') {
+  console.error('catalog diff should split reseen, new, and removed', diff);
+  failed += 1;
+}
+if (isListingActive({ raw_data: { listing_active: false } }) !== false) {
+  console.error('inactive listing should not count as active');
+  failed += 1;
+}
+const removedPatch = removalPatch({ status: 'eligible', raw_data: { desk_status: 'Callback' } }, '2026-09-03T12:00:00.000Z');
+if (removedPatch.status !== 'ignored' || removedPatch.ineligible_reason !== 'removed_from_nettikone' || removedPatch.raw_data.listing_active !== false) {
+  console.error('removal patch should mark eligible listings as taken down', removedPatch);
+  failed += 1;
+}
+const keptPatch = removalPatch({ status: 'replied', raw_data: {} }, '2026-09-03T12:00:00.000Z');
+if (keptPatch.status !== undefined || keptPatch.raw_data.removal_reason !== 'not_in_search_index') {
+  console.error('removal patch should keep workflow status on messaged leads', keptPatch);
   failed += 1;
 }
 

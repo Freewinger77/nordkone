@@ -1,10 +1,15 @@
 import { Router } from 'express';
-import { runScrape } from '../../scripts/scrape-nettikone.js';
+import { runCatalogSync, runScrape } from '../../scripts/scrape-nettikone.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const router = Router();
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 router.get('/run', run);
 router.post('/run', run);
+router.get('/sync', syncCatalog);
+router.post('/sync', syncCatalog);
 
 async function run(req, res) {
   const targetNew = clamp(
@@ -60,6 +65,36 @@ async function run(req, res) {
     maxListings,
     maxMs,
     stats,
+  });
+}
+
+async function syncCatalog(req, res) {
+  const category = String(req.query.category || req.body?.category || process.env.NETTIKONE_DEFAULT_CATEGORY || 'kaivinkone');
+  const postedBy = String(req.query.posted_by || req.query.postedBy || req.body?.postedBy || process.env.NETTIKONE_DEFAULT_POSTED_BY || 'S');
+  const maxPages = clamp(Number(req.query.maxPages || req.body?.maxPages || 300), 1, 400);
+  const maxMs = clamp(Number(req.query.maxMs || req.body?.maxMs || 540000), 15000, 590000);
+  const maxNewListings = clamp(Number(req.query.maxNewListings || req.body?.maxNewListings || 500), 0, 800);
+  const writeSnapshot = req.query.snapshot !== 'false' && req.body?.snapshot !== false;
+  const snapshotPath = writeSnapshot ? path.join(rootDir, 'nk-catalog-active.json') : null;
+
+  const result = await runCatalogSync({
+    category,
+    postedBy,
+    maxPages,
+    maxMs,
+    maxNewListings,
+    snapshotPath,
+  });
+
+  res.json({
+    ok: true,
+    category,
+    postedBy,
+    maxPages,
+    maxMs,
+    snapshot_path: snapshotPath,
+    stats: result.stats,
+    active_count: result.snapshot?.active_ids?.length || result.stats.active_on_nettikone,
   });
 }
 

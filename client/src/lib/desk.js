@@ -3,27 +3,37 @@ import { reconcileLead } from '../../../shared/reconcile.js';
 export const DESK_STATUSES = [
   { label: 'Interested', dot: 'rgb(113,221,140)' },
   { label: 'No Answer', dot: 'rgb(255,204,0)' },
-  { label: 'Callback', dot: 'rgb(76,152,253)' },
+  { label: 'Call Now', dot: 'rgb(76,152,253)' },
   { label: 'Booked', dot: 'rgb(79,80,127)' },
   { label: 'Deal Won', dot: 'rgb(113,221,140)' },
-  { label: 'Deal Lost', dot: 'rgb(255,71,71)' },
+  { label: 'Lost / Sold', dot: 'rgb(255,71,71)' },
   { label: 'Not Interested', dot: 'rgba(0,0,0,0.2)' },
   { label: 'Opted Out', dot: 'rgba(0,0,0,0.2)' },
   { label: 'Review', dot: 'rgb(184,153,235)' },
 ];
 
 const STATUS_DOT = Object.fromEntries(DESK_STATUSES.map((row) => [row.label, row.dot]));
+STATUS_DOT.Callback = STATUS_DOT['Call Now'];
+STATUS_DOT['Deal Lost'] = STATUS_DOT['Lost / Sold'];
+
+export function stageLabel(stage) {
+  if (stage === 'Callback') return 'Call Now';
+  if (stage === 'Deal Lost') return 'Lost / Sold';
+  return stage;
+}
 
 export const QUEUE_KEY = 'nordkone-work-queue-v2';
 
 export {
   FLOW_FILTERS,
   countFlow,
+  isOpenOpportunity,
   matchesFlowFilter,
   reconcileLead,
 } from '../../../shared/reconcile.js';
 
 export function statusDot(label) {
+  if (label === 'Replied') return 'rgb(255,204,0)';
   return STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
 }
 
@@ -31,7 +41,13 @@ export function listingToDeskStatus(listing = {}, conversation = {}, calendarCal
   return reconcileLead({ listing, conversation, calendarCalls }).stage;
 }
 
-export function listingStatusLabel(status) {
+export function listingStatusLabel(status, listing = {}) {
+  if (listing.listing_active === false || listing.removed_at || listing.raw_data?.listing_active === false) {
+    return 'Taken down';
+  }
+  if (status === 'ignored' && listing.ineligible_reason === 'removed_from_nettikone') {
+    return 'Taken down';
+  }
   const map = {
     eligible: 'Eligible',
     contacted: 'In session',
@@ -51,11 +67,13 @@ export function cut(text, max = 30) {
   return value.length > max ? `${value.slice(0, max).replace(/\s+$/, '')}…` : value;
 }
 
-export function formatEuro(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '';
-  return `${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
-}
+export {
+  displayAskingPrice,
+  formatEuro,
+  looksGarbledPriceText,
+  recoverAskingPrice,
+  storedPriceText,
+} from '../../../shared/price-text.js';
 
 export function parseEuroAmount(value) {
   if (value == null || value === '') return 0;
@@ -84,18 +102,28 @@ export function relativeAgo(value) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`;
+  return `${days}d`;
 }
 
 export function formatHelsinkiTime(value) {
   if (!value) return '';
-  return new Intl.DateTimeFormat('fi-FI', {
-    day: '2-digit',
-    month: '2-digit',
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
     timeZone: 'Europe/Helsinki',
-  }).format(new Date(value));
+  }).formatToParts(new Date(value));
+  const pick = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${Number(pick('day'))}.${Number(pick('month'))}. ${pick('hour')}:${pick('minute')}`;
+}
+
+export function statusWash(label) {
+  const color = STATUS_DOT[label] || 'rgba(0,0,0,0.2)';
+  const match = String(color).match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (!match) return 'rgba(0,0,0,0.04)';
+  return `rgba(${match[1]}, ${match[2]}, ${match[3]}, 0.16)`;
 }
 
 export function formatHelsinkiClock(value) {
@@ -126,48 +154,65 @@ export function startOfHelsinkiWeek(offset = 0) {
   return monday;
 }
 
-export function buildWeek(offset, calls = []) {
+export function buildWeek(offset, calls = [], callbacks = []) {
   const monday = startOfHelsinkiWeek(offset);
   const todayKey = helsinkiDateKey(new Date());
   const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const weekdayCount = weekendVisible(monday, calls, todayKey) ? 7 : 5;
 
-  const days = names.slice(0, weekdayCount).map((name, index) => {
+  const days = names.map((name, index) => {
     const date = new Date(monday);
     date.setUTCDate(monday.getUTCDate() + index);
     const key = helsinkiDateKey(date);
-    const events = calls
+    const booked = calls
       .filter((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
       .map((call) => ({
+        kind: 'booked',
         at: formatHelsinkiClock(call.scheduled_start),
         machine: call.listing?.machine_title || call.source_customer_id || call.number,
         phone: call.callback_number || call.number,
         leadId: call.source_customer_id || call.number,
+        sort: Date.parse(call.scheduled_start) || 0,
       }));
+    const pending = callbacks
+      .filter((lead) => lead.callbackAt && helsinkiDateKey(lead.callbackAt) === key)
+      .map((lead) => ({
+        kind: 'callback',
+        at: formatHelsinkiClock(lead.callbackAt),
+        machine: lead.machine,
+        phone: lead.phone,
+        leadId: lead.listingId || lead.id,
+        sort: Date.parse(lead.callbackAt) || 0,
+      }));
+    const events = [...booked, ...pending].sort((a, b) => a.sort - b.sort || (a.kind === 'booked' ? -1 : 1));
     return {
       name,
       num: String(date.getUTCDate()),
       today: key === todayKey,
+      blocked: name === 'Sun',
       events,
     };
   });
 
   const first = days[0];
-  const last = days[4];
+  const last = days[days.length - 1];
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const startMonth = monthNames[monday.getUTCMonth()];
   const endDate = new Date(monday);
-  endDate.setUTCDate(monday.getUTCDate() + 4);
+  endDate.setUTCDate(monday.getUTCDate() + 6);
   const endMonth = monthNames[endDate.getUTCMonth()];
   const label =
     startMonth === endMonth
       ? `${first.num} – ${last.num} ${startMonth}`
       : `${first.num} ${startMonth} – ${last.num} ${endMonth}`;
 
-  const count = days.reduce((sum, day) => sum + day.events.length, 0);
+  const bookedCount = days.reduce((sum, day) => sum + day.events.filter((event) => event.kind === 'booked').length, 0);
+  const callbackCount = days.reduce((sum, day) => sum + day.events.filter((event) => event.kind === 'callback').length, 0);
+  const parts = [];
+  if (bookedCount) parts.push(bookedCount === 1 ? '1 booked' : `${bookedCount} booked`);
+  if (callbackCount) parts.push(callbackCount === 1 ? '1 Call Now' : `${callbackCount} Call Now`);
   return {
     label,
-    count: count === 0 ? 'No calls booked' : count === 1 ? '1 call booked' : `${count} calls booked`,
+    count: parts.join(' · ') || 'No calls this week',
     days,
   };
 }
@@ -196,6 +241,11 @@ export function ribbon(x0, x1, y0, y1, h) {
   return `M ${x0} ${y0} C ${m} ${y0}, ${m} ${y1}, ${x1} ${y1} L ${x1} ${y1 + h} C ${m} ${y1 + h}, ${m} ${y0 + h}, ${x0} ${y0 + h} Z`;
 }
 
+export function vRibbon(x0, y0, x1, y1, w) {
+  const m = (y0 + y1) / 2;
+  return `M ${x0} ${y0} C ${x0} ${m}, ${x1} ${m}, ${x1} ${y1} L ${x1 + w} ${y1} C ${x1 + w} ${m}, ${x0 + w} ${m}, ${x0 + w} ${y0} Z`;
+}
+
 export function smooth(vals, w, h, pad) {
   const max = Math.max(...vals, 1);
   const step = (w - pad * 2) / Math.max(vals.length - 1, 1);
@@ -219,17 +269,18 @@ export function poly(vals, w, h, pad) {
     .replace(/^/, 'M ');
 }
 
-export function buildFlow(counts, activeStage) {
+function flowStages(counts) {
   const messaged = counts.messaged || 0;
   const replied = counts.replied || 0;
   const noreply = Math.max(messaged - replied, 0);
-  const interested = counts.interested || 0;
   const notint = counts.notint || 0;
   const review = counts.review || 0;
   const won = counts.won || 0;
   const lost = counts.lost || 0;
   const booked = counts.booked || 0;
-  const awaiting = counts.await || 0;
+  const callback = counts.callback || 0;
+  const awaitReply = counts.awaitReply ?? Math.max(replied - callback - booked - review - lost - won - notint, 0);
+  const opportunities = Math.max(counts.opportunities || callback + booked + won, callback + booked + won);
   const scale = Math.max(messaged, 1);
 
   const cols = [
@@ -239,50 +290,65 @@ export function buildFlow(counts, activeStage) {
       { k: 'noreply', label: 'No reply', v: noreply, pct: pct(noreply, messaged), c: 'rgba(0,0,0,0.2)' },
     ],
     [
-      { k: 'interested', label: 'Interested', v: interested, pct: pct(interested, replied), c: 'rgb(113,221,140)' },
+      { k: 'opportunities', label: 'Opportunities', v: opportunities, pct: pct(opportunities, replied), c: 'rgb(113,221,140)' },
+      { k: 'lost', label: 'Lost / Sold', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
       { k: 'notint', label: 'Not interested', v: notint, pct: pct(notint, replied), c: 'rgba(0,0,0,0.2)' },
       { k: 'review', label: 'Review', v: review, pct: pct(review, replied), c: 'rgb(184,153,235)' },
+      { k: 'awaitReply', label: 'Awaiting reply', v: awaitReply, pct: pct(awaitReply, replied), c: 'rgb(255,204,0)' },
     ],
     [
-      { k: 'won', label: 'Deal won', v: won, pct: pct(won, replied), c: 'rgb(113,221,140)' },
-      { k: 'lost', label: 'Deal lost', v: lost, pct: pct(lost, replied), c: 'rgb(255,71,71)' },
-      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, replied), c: 'rgb(79,80,127)' },
-      { k: 'await', label: 'Awaiting booking', v: awaiting, pct: pct(awaiting, replied), c: 'rgb(255,204,0)' },
+      { k: 'booked', label: 'Booked', v: booked, pct: pct(booked, opportunities), c: 'rgb(79,80,127)' },
+      { k: 'callback', label: 'Call Now', v: callback, pct: pct(callback, opportunities), c: 'rgb(76,152,253)' },
+      { k: 'won', label: 'Deal won', v: won, pct: pct(won, opportunities), c: 'rgb(113,221,140)' },
     ],
-  ];
+  ]
+    .map((col, index) => col.filter((node) => node.v > 0 || (index === 0 && node.k === 'messaged')))
+    .filter((col) => col.length);
 
   const linksSpec = [
     ['messaged', 'replied', replied],
     ['messaged', 'noreply', noreply],
-    ['replied', 'interested', interested],
+    ['replied', 'opportunities', opportunities],
+    ['replied', 'lost', lost],
     ['replied', 'notint', notint],
     ['replied', 'review', review],
-    ['replied', 'won', won],
-    ['replied', 'lost', lost],
-    ['replied', 'booked', booked],
-    ['interested', 'await', awaiting],
-  ];
+    ['replied', 'awaitReply', awaitReply],
+    ['opportunities', 'booked', booked],
+    ['opportunities', 'callback', callback],
+    ['opportunities', 'won', won],
+  ].filter(([, target, value]) => value > 0 && cols.flat().some((node) => node.k === target));
 
-  const x = [8, 270, 520, 730];
-  const bw = 12;
-  const top = 22;
-  const height = 372;
-  const gap = 40;
+  return { cols, linksSpec, scale };
+}
+
+export function buildFlow(counts, activeStage) {
+  const { cols, linksSpec, scale } = flowStages(counts);
+
+  const vw = 1100;
+  const bw = 16;
+  const labelRoom = 208;
+  const left = 10;
+  const lastX = vw - labelRoom;
+  const x = cols.map((_, index) => Math.round(left + ((lastX - left) * index) / Math.max(cols.length - 1, 1)));
+  const top = 8;
+  const height = 300;
+  const gap = 18;
   const unit = height / scale;
-  const vw = 1120;
-  const vh = 500;
   const lmin = 58;
   const map = {};
   const nodes = [];
 
   cols.forEach((col, ci) => {
-    let y = top;
-    let prevC = -999;
+    const lastCol = ci === cols.length - 1 && map.opportunities;
+    let y = lastCol ? map.opportunities.y : top;
+    let prevC = lastCol ? map.opportunities.y - lmin : -999;
     col.forEach((n) => {
-      const h = Math.max(n.v * unit, 6);
-      let lc = y + h / 2;
-      if (lc - prevC < lmin) lc = prevC + lmin;
-      prevC = lc;
+      const h = Math.max(n.v * unit, 10);
+      let lc = y + Math.min(h / 2, 14);
+      if (lc - prevC < lmin) {
+        y += lmin - (lc - prevC);
+        lc = y + Math.min(h / 2, 14);
+      }
       const node = {
         k: n.k,
         x: x[ci],
@@ -293,28 +359,105 @@ export function buildFlow(counts, activeStage) {
         count: `${n.v} (${n.pct})`,
         c: n.c,
         lfg: activeStage === n.k ? 'rgb(79,80,127)' : 'rgb(0,0,0)',
-        left: `${((x[ci] + bw + 12) / vw) * 100}%`,
-        top: `${(lc / vh) * 100}%`,
+        left: `${((x[ci] + bw + 14) / vw) * 100}%`,
+        lc,
         outCur: y,
         inCur: y,
       };
       map[n.k] = node;
       nodes.push(node);
-      y += h + gap;
+      y += Math.max(h + gap, lmin);
     });
   });
 
-  const links = linksSpec.map(([a, b, v]) => {
+  const vh = Math.max(...nodes.map((node) => Math.max(node.y + node.h, node.lc + 22)), 160) + 16;
+  for (const node of nodes) {
+    node.top = `${(node.lc / vh) * 100}%`;
+  }
+
+  const links = linksSpec.filter(([a, b]) => map[a] && map[b]).map(([a, b, v]) => {
     const s = map[a];
     const t = map[b];
-    const h = Math.max(v * unit, 6);
+    const remainS = Math.max(s.y + s.h - s.outCur, 8);
+    const remainT = Math.max(t.y + t.h - t.inCur, 8);
+    const h = Math.min(Math.max(v * unit, 8), remainS, remainT);
     const d = ribbon(s.x + s.w, t.x, s.outCur, t.inCur, h);
     s.outCur += h;
     t.inCur += h;
-    return { d };
+    return { d, from: a, to: b };
   });
 
-  return { nodes, links };
+  return { nodes, links, vw, vh };
+}
+
+export function buildVerticalFlow(counts, activeStage) {
+  const { cols, linksSpec, scale } = flowStages(counts);
+  const vw = 390;
+  const pad = 8;
+  const inner = vw - pad * 2;
+  const bh = 16;
+  const labelBand = 46;
+  const ribbonBand = 50;
+  const top = 8;
+  const gap = 8;
+  const unit = inner / scale;
+  const map = {};
+  const nodes = [];
+
+  cols.forEach((col, ri) => {
+    const y = top + ri * (bh + labelBand + ribbonBand);
+    const crowded = col.length >= 3;
+    const slot = crowded ? inner / col.length : 0;
+    const raw = col.map((n) => Math.max(n.v * unit, 16));
+    const used = raw.reduce((sum, w) => sum + w, 0) + gap * Math.max(col.length - 1, 0);
+    const extra = Math.max(inner - used, 0);
+    const rawSum = raw.reduce((sum, w) => sum + w, 0) || 1;
+    const widths = crowded
+      ? col.map((n) => Math.min(Math.max(n.v * unit, 16), Math.max(slot - 8, 16)))
+      : raw.map((w) => w + extra * (w / rawSum));
+    col.forEach((n, ni) => {
+      const w = widths[ni];
+      const x = crowded ? pad + ni * slot : pad + widths.slice(0, ni).reduce((sum, width) => sum + width + gap, 0);
+      const node = {
+        k: n.k,
+        x,
+        y,
+        h: bh,
+        w,
+        label: n.label,
+        count: `${n.v} (${n.pct})`,
+        c: n.c,
+        lfg: 'rgb(0,0,0)',
+        left: `${(x / vw) * 100}%`,
+        labelMax: `${Math.max(crowded ? slot - 6 : w, 72)}px`,
+        outCur: x,
+        inCur: x,
+      };
+      map[n.k] = node;
+      nodes.push(node);
+    });
+  });
+
+  const last = nodes[nodes.length - 1];
+  const vh = (last ? last.y + last.h + labelBand : 160) + 8;
+
+  const links = linksSpec.filter(([a, b]) => map[a] && map[b]).map(([a, b, v]) => {
+    const s = map[a];
+    const t = map[b];
+    const remainS = Math.max(s.x + s.w - s.outCur, 8);
+    const remainT = Math.max(t.x + t.w - t.inCur, 8);
+    const w = Math.min(Math.max(v * unit, 8), remainS, remainT);
+    const d = vRibbon(s.outCur, s.y + s.h, t.inCur, t.y, w);
+    s.outCur += w;
+    t.inCur += w;
+    return { d, from: a, to: b };
+  });
+
+  for (const node of nodes) {
+    node.top = `${((node.y + node.h + 4) / vh) * 100}%`;
+  }
+
+  return { nodes, links, vw, vh, vertical: true };
 }
 
 export function weekdayReplySeries(conversations = []) {
@@ -365,18 +508,6 @@ function helsinkiDateKey(value) {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date(value));
-}
-
-function weekendVisible(monday, calls, todayKey) {
-  return [5, 6].some((offset) => {
-    const date = new Date(monday);
-    date.setUTCDate(monday.getUTCDate() + offset);
-    const key = helsinkiDateKey(date);
-    return (
-      key === todayKey ||
-      calls.some((call) => call.scheduled_start && helsinkiDateKey(call.scheduled_start) === key)
-    );
-  });
 }
 
 function pct(part, whole) {

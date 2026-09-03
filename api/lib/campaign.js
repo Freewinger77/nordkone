@@ -1,3 +1,6 @@
+import { classifyListing } from '../../shared/machine-class.js';
+import { listingCallFields } from '../../shared/call-log.js';
+
 export const CLIENT_KEY =
   process.env.CAMPAIGN_CLIENT_KEY || process.env.NORDKONE_CLIENT_KEY || 'nordkone';
 
@@ -20,6 +23,7 @@ export function listingRowToResponse(row = {}) {
     listing_type: row.listing_type,
     department: row.department,
     category: row.category,
+    machine_class: classifyListing(row),
     price_text: row.price_text,
     price_eur: row.price_eur,
     vat_text: row.vat_text,
@@ -38,6 +42,10 @@ export function listingRowToResponse(row = {}) {
     phone_source: row.phone_source || 'missing',
     status: row.status || 'eligible',
     desk_status: row.raw_data?.desk_status || null,
+    ...listingCallFields(row),
+    listing_active: row.raw_data?.listing_active !== false,
+    removed_at: row.raw_data?.removed_at || null,
+    removal_reason: row.raw_data?.removal_reason || null,
     interest_status: listingInterestStatus(row.status),
     eligible: row.status === 'eligible',
     ineligible_reason: row.ineligible_reason,
@@ -55,4 +63,22 @@ function listingInterestStatus(status) {
   }
 
   return null;
+}
+
+export function isListingLive(row = {}) {
+  if (row.listing_active === false) return false;
+  if (row.raw_data?.listing_active === false) return false;
+  return true;
+}
+
+export function sortOutreachListings(rows = []) {
+  return [...rows].sort((left, right) => {
+    const leftLive = isListingLive(left) ? 1 : 0;
+    const rightLive = isListingLive(right) ? 1 : 0;
+    if (leftLive !== rightLive) return rightLive - leftLive;
+    const leftSeen = Date.parse(left.last_seen_at) || 0;
+    const rightSeen = Date.parse(right.last_seen_at) || 0;
+    if (leftSeen !== rightSeen) return rightSeen - leftSeen;
+    return (Date.parse(right.first_seen_at) || 0) - (Date.parse(left.first_seen_at) || 0);
+  });
 }

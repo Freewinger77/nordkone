@@ -64,3 +64,21 @@ function listingInterestStatus(status) {
 
   return null;
 }
+
+export function isListingLive(row = {}) {
+  if (row.listing_active === false) return false;
+  if (row.raw_data?.listing_active === false) return false;
+  return true;
+}
+
+export function sortOutreachListings(rows = []) {
+  return [...rows].sort((left, right) => {
+    const leftLive = isListingLive(left) ? 1 : 0;
+    const rightLive = isListingLive(right) ? 1 : 0;
+    if (leftLive !== rightLive) return rightLive - leftLive;
+    const leftSeen = Date.parse(left.last_seen_at) || 0;
+    const rightSeen = Date.parse(right.last_seen_at) || 0;
+    if (leftSeen !== rightSeen) return rightSeen - leftSeen;
+    return (Date.parse(right.first_seen_at) || 0) - (Date.parse(left.first_seen_at) || 0);
+  });
+}

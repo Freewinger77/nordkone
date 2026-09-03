@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createSupabase } from '../lib/supabase.js';
 import { normalizePhone } from '../lib/phone.js';
-import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, listingRowToResponse } from '../lib/campaign.js';
+import { CAMPAIGN_NAME, CLIENT_KEY, SOURCE_SYSTEM, isListingLive, listingRowToResponse, sortOutreachListings } from '../lib/campaign.js';
 import { bookingFromRecord, isActiveBooking } from '../../shared/reconcile.js';
 import { isEmailOfferText, isNeedsReviewReply, isNoCallRequest, isWrittenChannelText, normalizeInboundClassification } from '../../shared/intent.js';
 import {
@@ -72,7 +72,7 @@ router.get('/summary', async (_req, res) => {
 
 router.get('/listings', async (req, res) => {
   const supabase = createSupabase();
-  const limit = clamp(Number(req.query.limit || 50), 1, 200);
+  const limit = clamp(Number(req.query.limit || 50), 1, 600);
   const status = req.query.status ? String(req.query.status) : null;
   const q = req.query.q ? String(req.query.q).trim() : null;
 
@@ -95,7 +95,7 @@ router.get('/listings', async (req, res) => {
   const { data, error } = await query;
   if (error) throw error;
 
-  res.json({ listings: (data || []).map(listingRowToResponse) });
+  res.json({ listings: sortOutreachListings((data || []).map(listingRowToResponse)) });
 });
 
 router.patch('/leads/status', async (req, res) => {
@@ -1272,6 +1272,9 @@ async function countListings(supabase, { status, hasPhone, phoneSource } = {}) {
   if (status) query = query.eq('status', status);
   if (phoneSource) query = query.eq('phone_source', phoneSource);
   if (hasPhone) query = query.not('normalized_phone', 'is', null);
+  if (status === 'eligible' && hasPhone) {
+    query = query.or('raw_data->>listing_active.is.null,raw_data->>listing_active.eq.true');
+  }
 
   const { count, error } = await query;
   if (error) throw error;
@@ -1301,11 +1304,11 @@ async function loadEligibleListings(supabase, limit = 2000) {
     .eq('client_key', CLIENT_KEY)
     .eq('status', 'eligible')
     .not('normalized_phone', 'is', null)
-    .order('first_seen_at', { ascending: true })
+    .order('last_seen_at', { ascending: false })
     .limit(limit);
 
   if (error) throw error;
-  return data || [];
+  return sortOutreachListings((data || []).filter(isListingLive));
 }
 
 function buildPriceHistogram(prices, buckets = 16) {

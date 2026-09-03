@@ -87,7 +87,7 @@ function App() {
     try {
       const [summaryData, listingData, conversationData, callsData, settingsData, candidateData] = await Promise.all([
         apiGet('/api/summary'),
-        apiGet('/api/listings?status=all&limit=200'),
+        apiGet('/api/listings?status=all&limit=600'),
         apiGet('/api/conversations?limit=300'),
         apiGet('/api/calendar-calls?limit=150'),
         apiGet('/api/settings'),

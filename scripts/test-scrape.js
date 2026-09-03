@@ -1,3 +1,4 @@
+import { isListingLive, sortOutreachListings } from '../api/lib/campaign.js';
 import { buildCatalogDiff, isListingActive, looksLikeBadPrice, mapPool, removalPatch, splitFreshListingUrls } from './scrape-nettikone.js';
 
 let failed = 0;
@@ -70,6 +71,20 @@ if (removedPatch.status !== 'ignored' || removedPatch.ineligible_reason !== 'rem
 const keptPatch = removalPatch({ status: 'replied', raw_data: {} }, '2026-09-03T12:00:00.000Z');
 if (keptPatch.status !== undefined || keptPatch.raw_data.removal_reason !== 'not_in_search_index') {
   console.error('removal patch should keep workflow status on messaged leads', keptPatch);
+  failed += 1;
+}
+
+const ranked = sortOutreachListings([
+  { nettikone_id: 'old', last_seen_at: '2026-06-01T00:00:00.000Z', first_seen_at: '2026-06-01T00:00:00.000Z', raw_data: { listing_active: true } },
+  { nettikone_id: 'gone', last_seen_at: '2026-08-31T00:00:00.000Z', first_seen_at: '2026-08-01T00:00:00.000Z', raw_data: { listing_active: false } },
+  { nettikone_id: 'fresh', last_seen_at: '2026-09-03T16:00:00.000Z', first_seen_at: '2026-09-03T16:00:00.000Z', raw_data: {} },
+]);
+if (ranked.map((row) => row.nettikone_id).join(',') !== 'fresh,old,gone') {
+  console.error('outreach queue should put live freshest first and taken-down last', ranked);
+  failed += 1;
+}
+if (isListingLive({ listing_active: false }) !== false || isListingLive({ raw_data: {} }) !== true) {
+  console.error('live check should treat missing listing_active as live');
   failed += 1;
 }
 
